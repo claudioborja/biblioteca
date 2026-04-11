@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//home/claudio/Escritorio/biblioteca/.agents/**)",
+      "Read(//home/claudio/Escritorio/biblioteca/**)"
+    ]
+  }
+}
