@@ -1,0 +1,36 @@
+RewriteEngine On
+
+# ─── Security: Block access to sensitive directories and files ────────────
+RewriteRule ^app/         - [F,L]
+RewriteRule ^config/      - [F,L]
+RewriteRule ^database/    - [F,L]
+RewriteRule ^storage/     - [F,L]
+RewriteRule ^bin/         - [F,L]
+RewriteRule ^views/       - [F,L]
+RewriteRule ^tests/       - [F,L]
+RewriteRule ^vendor/      - [F,L]
+RewriteRule ^\.agents/    - [F,L]
+
+# Block hidden files (.env, .git, .htaccess inside dirs, etc.)
+RewriteRule (^\.|/\.) - [F,L]
+
+# Block sensitive file extensions
+RewriteRule \.(env|log|sql|bak|ini|conf|md|lock|json)$ - [F,L]
+
+# Block direct access to bootstrap and config files
+RewriteRule ^bootstrap\.php$ - [F,L]
+
+# ─── Routing: Serve static assets from public/, route rest to index.php ──
+
+# If file exists in public/, serve it directly (CSS, JS, images, etc.)
+RewriteCond %{DOCUMENT_ROOT}/biblioteca/public/%{REQUEST_URI} -f
+RewriteRule ^(.+)$ public/$1 [L]
+
+# Route everything else through public/index.php
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ public/index.php [L,QSA]
+
+# If requesting the root of this directory, go to public/index.php
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^$ public/index.php [L,QSA]

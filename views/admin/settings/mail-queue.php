@@ -1,0 +1,422 @@
+<?php
+// views/admin/settings/mail-queue.php
+$e = fn(mixed $v) => htmlspecialchars((string) $v, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+
+/** @var array<string,int> $queue_stats */
+/** @var list<array<string,mixed>> $queue_items */
+/** @var bool $cron_configured */
+/** @var string $cron_output */
+/** @var bool $exec_available */
+/** @var string $csrf_token */
+
+$stats        = is_array($queue_stats ?? null) ? $queue_stats : [];
+$items        = is_array($queue_items ?? null) ? $queue_items : [];
+$cronOk       = (bool) ($cron_configured ?? false);
+$execOk       = (bool) ($exec_available ?? false);
+$csrfToken    = (string) ($csrf_token ?? '');
+$workerCmd    = 'php ' . BASE_PATH . '/bin/mail_worker.php';
+$cronEntry    = '*/5 * * * * ' . PHP_BINARY . ' ' . BASE_PATH . '/bin/mail_worker.php >> ' . BASE_PATH . '/storage/logs/mail_worker_cron.log 2>&1';
+
+$statusBadge = static function (string $status): string {
+    return match ($status) {
+        'sent'    => 'bg-emerald-100 text-emerald-700',
+        'failed'  => 'bg-red-100 text-red-700',
+        'pending' => 'bg-amber-100 text-amber-700',
+        default   => 'bg-slate-100 text-slate-600',
+    };
+};
+$statusLabel = static function (string $status): string {
+    return match ($status) {
+        'sent'    => 'Enviado',
+        'failed'  => 'Fallido',
+        'pending' => 'Pendiente',
+        default   => ucfirst($status),
+    };
+};
+?>
+
+<section class="p-4 lg:p-6">
+
+    <!-- Header -->
+    <div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+            <p class="label-sm text-on-surface-subtle">Configuración</p>
+            <h1 class="headline-lg text-on-surface">Cola de correo</h1>
+            <p class="body-md mt-1 text-on-surface-subtle">Estado de envíos, reintentos y configuración del worker.</p>
+        </div>
+        <div class="flex items-center gap-2">
+            <a href="<?= BASE_URL ?>/admin/settings"
+               class="flex items-center gap-1.5 rounded-xl border border-outline-variant px-3 py-1.5 text-sm font-semibold text-on-surface hover:bg-surface-container transition-colors">
+                <i data-lucide="settings" class="h-4 w-4"></i>
+                Configuración
+            </a>
+            <?php if ($execOk): ?>
+            <button id="btn-run-worker"
+                    class="flex items-center gap-1.5 rounded-xl gradient-scholar px-3 py-1.5 text-sm font-semibold text-white shadow-ambient hover:opacity-90 transition-opacity">
+                <i data-lucide="play" class="h-4 w-4"></i>
+                Ejecutar ahora
+            </button>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <!-- Cron status banner -->
+    <?php if (!$cronOk): ?>
+    <div class="mb-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-ambient">
+        <div class="flex items-start gap-3">
+            <i data-lucide="triangle-alert" class="mt-0.5 h-5 w-5 shrink-0 text-amber-600"></i>
+            <div class="flex-1">
+                <p class="text-sm font-semibold text-amber-800">El worker de correo no está configurado como tarea programada</p>
+                <p class="mt-1 text-xs text-amber-700">
+                    Los correos en cola no se enviarán automáticamente. Debes configurar un cron o ejecutar el worker manualmente.
+                </p>
+                <div class="mt-3 space-y-2">
+                    <p class="text-xs font-semibold text-amber-800">Cómo configurarlo:</p>
+                    <p class="text-xs text-amber-700">1. Abre la terminal del servidor y ejecuta <code class="rounded bg-amber-100 px-1 font-mono">crontab -e</code></p>
+                    <p class="text-xs text-amber-700">2. Agrega esta línea al final:</p>
+                    <div class="mt-1 flex items-center gap-2 rounded-xl border border-amber-200 bg-white px-3 py-2">
+                        <code id="cron-entry-text" class="flex-1 font-mono text-xs text-slate-700 break-all"><?= $e($cronEntry) ?></code>
+                        <button type="button" id="btn-copy-cron"
+                                class="shrink-0 rounded-lg border border-outline-variant p-1.5 text-on-surface-muted hover:bg-surface-container transition-colors"
+                                title="Copiar">
+                            <i data-lucide="copy" class="h-3.5 w-3.5"></i>
+                        </button>
+                    </div>
+                    <p class="text-xs text-amber-700">3. Guarda y sal del editor. El worker se ejecutará cada 5 minutos.</p>
+                    <p class="text-xs text-amber-700">
+                        También puedes ejecutar el worker una vez manualmente:
+                        <code class="rounded bg-amber-100 px-1 font-mono"><?= $e($workerCmd) ?></code>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php else: ?>
+    <div class="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 shadow-ambient">
+        <div class="flex items-center gap-2.5">
+            <i data-lucide="circle-check" class="h-4 w-4 shrink-0 text-emerald-600"></i>
+            <p class="text-sm font-semibold text-emerald-800">Worker configurado — los correos se envían automáticamente cada 5 minutos.</p>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <!-- Stats cards -->
+    <div class="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <article class="rounded-2xl border border-outline-variant/60 bg-white p-5 shadow-ambient">
+            <div class="flex items-center justify-between">
+                <p class="label-md text-on-surface-subtle">Total en cola</p>
+                <i data-lucide="inbox" class="h-4 w-4 text-on-surface-subtle"></i>
+            </div>
+            <p class="mt-2 font-display text-2xl font-bold text-on-surface"><?= (int) ($stats['total'] ?? 0) ?></p>
+        </article>
+        <article class="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-ambient">
+            <div class="flex items-center justify-between">
+                <p class="label-md text-amber-700">Pendientes</p>
+                <i data-lucide="clock" class="h-4 w-4 text-amber-500"></i>
+            </div>
+            <p class="mt-2 font-display text-2xl font-bold text-amber-700"><?= (int) ($stats['pending'] ?? 0) ?></p>
+        </article>
+        <article class="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 shadow-ambient">
+            <div class="flex items-center justify-between">
+                <p class="label-md text-emerald-700">Enviados</p>
+                <i data-lucide="circle-check" class="h-4 w-4 text-emerald-500"></i>
+            </div>
+            <p class="mt-2 font-display text-2xl font-bold text-emerald-700"><?= (int) ($stats['sent'] ?? 0) ?></p>
+        </article>
+        <article class="rounded-2xl border <?= (int)($stats['failed'] ?? 0) > 0 ? 'border-red-200 bg-red-50' : 'border-outline-variant/60 bg-white' ?> p-5 shadow-ambient">
+            <div class="flex items-center justify-between">
+                <p class="label-md <?= (int)($stats['failed'] ?? 0) > 0 ? 'text-red-700' : 'text-on-surface-subtle' ?>">Fallidos</p>
+                <i data-lucide="circle-x" class="h-4 w-4 <?= (int)($stats['failed'] ?? 0) > 0 ? 'text-red-500' : 'text-on-surface-subtle' ?>"></i>
+            </div>
+            <p class="mt-2 font-display text-2xl font-bold <?= (int)($stats['failed'] ?? 0) > 0 ? 'text-red-700' : 'text-on-surface' ?>"><?= (int) ($stats['failed'] ?? 0) ?></p>
+            <?php if ((int)($stats['failed'] ?? 0) > 0): ?>
+            <button id="btn-retry-all"
+                    class="mt-2 flex items-center gap-1 rounded-lg border border-red-300 bg-white px-2.5 py-1 text-xs font-semibold text-red-700 hover:bg-red-50 transition-colors">
+                <i data-lucide="refresh-cw" class="h-3 w-3"></i>
+                Reintentar todos
+            </button>
+            <?php endif; ?>
+        </article>
+    </div>
+
+    <!-- Worker result toast -->
+    <div id="worker-toast"
+         class="mb-4 hidden rounded-xl border px-4 py-3 text-sm font-semibold"
+         role="alert" aria-live="polite"></div>
+
+    <!-- Queue table -->
+    <div class="overflow-hidden rounded-2xl border border-outline-variant/60 bg-white shadow-ambient">
+        <div class="flex items-center justify-between border-b border-outline-variant/50 px-4 py-3">
+            <h2 class="flex items-center gap-2 text-sm font-semibold text-on-surface">
+                <i data-lucide="list" class="h-4 w-4 text-primary"></i>
+                Últimos 60 correos
+            </h2>
+            <button type="button" onclick="window.location.reload()"
+                    class="flex items-center gap-1.5 rounded-lg border border-outline-variant px-2.5 py-1 text-xs font-semibold text-on-surface-muted hover:bg-surface-container transition-colors">
+                <i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>
+                Actualizar
+            </button>
+        </div>
+
+        <?php if (empty($items)): ?>
+        <div class="flex flex-col items-center justify-center gap-2 py-16 text-center">
+            <i data-lucide="mail-check" class="h-10 w-10 text-on-surface-subtle opacity-40"></i>
+            <p class="text-sm font-semibold text-on-surface-subtle">No hay correos en la cola</p>
+            <p class="text-xs text-on-surface-muted">Los correos aparecerán aquí cuando el sistema los genere.</p>
+        </div>
+        <?php else: ?>
+        <div class="overflow-x-auto">
+            <table class="min-w-full text-left text-sm">
+                <thead class="bg-surface-container-low text-xs uppercase tracking-wide text-on-surface-subtle">
+                    <tr>
+                        <th class="whitespace-nowrap px-4 py-3 font-semibold">#</th>
+                        <th class="whitespace-nowrap px-4 py-3 font-semibold">Destinatario</th>
+                        <th class="whitespace-nowrap px-4 py-3 font-semibold">Asunto</th>
+                        <th class="whitespace-nowrap px-4 py-3 font-semibold">Estado</th>
+                        <th class="whitespace-nowrap px-4 py-3 font-semibold">Intentos</th>
+                        <th class="whitespace-nowrap px-4 py-3 font-semibold">Programado</th>
+                        <th class="whitespace-nowrap px-4 py-3 font-semibold">Restante</th>
+                        <th class="whitespace-nowrap px-4 py-3 font-semibold">Enviado</th>
+                        <th class="whitespace-nowrap px-4 py-3 font-semibold">Error</th>
+                        <th class="whitespace-nowrap px-4 py-3 font-semibold">Acción</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-outline-variant/40" id="queue-tbody">
+                    <?php foreach ($items as $item):
+                        $status  = (string) ($item['status'] ?? '');
+                        $itemId  = (int) ($item['id'] ?? 0);
+                        $errMsg  = trim((string) ($item['error_message'] ?? ''));
+                        $scheduledTs = strtotime((string) ($item['scheduled_at'] ?? ''));
+                    ?>
+                    <tr class="hover:bg-surface-container/40 transition-colors" id="row-<?= $itemId ?>">
+                        <td class="px-4 py-3 font-mono text-xs text-on-surface-muted"><?= $itemId ?></td>
+                        <td class="px-4 py-3">
+                            <p class="text-xs font-semibold text-on-surface"><?= $e($item['to_name'] ?? '') ?></p>
+                            <p class="text-[11px] text-on-surface-muted"><?= $e($item['to_email'] ?? '') ?></p>
+                        </td>
+                        <td class="max-w-[200px] px-4 py-3 text-xs text-on-surface truncate" title="<?= $e($item['subject'] ?? '') ?>">
+                            <?= $e(mb_strimwidth((string) ($item['subject'] ?? ''), 0, 55, '…')) ?>
+                        </td>
+                        <td class="px-4 py-3">
+                            <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold <?= $statusBadge($status) ?>">
+                                <?= $statusLabel($status) ?>
+                            </span>
+                        </td>
+                        <td class="px-4 py-3 text-center text-xs font-semibold text-on-surface-muted">
+                            <?= (int) ($item['attempts'] ?? 0) ?>
+                        </td>
+                        <td class="whitespace-nowrap px-4 py-3 text-[11px] text-on-surface-muted">
+                            <?= $e($item['scheduled_at'] ?? '—') ?>
+                        </td>
+                        <td class="whitespace-nowrap px-4 py-3 text-[11px]">
+                            <span class="js-time-remaining <?= $status === 'pending' ? 'text-amber-700 font-semibold' : 'text-on-surface-subtle' ?>"
+                                  data-status="<?= $e($status) ?>"
+                                  data-scheduled-ts="<?= $scheduledTs !== false ? (int) $scheduledTs : 0 ?>">
+                                <?= $status === 'pending' ? 'Calculando…' : '—' ?>
+                            </span>
+                        </td>
+                        <td class="whitespace-nowrap px-4 py-3 text-[11px] text-on-surface-muted">
+                            <?= $item['sent_at'] ? $e($item['sent_at']) : '<span class="text-on-surface-subtle">—</span>' ?>
+                        </td>
+                        <td class="max-w-[180px] px-4 py-3">
+                            <?php if ($errMsg !== ''): ?>
+                            <span class="inline-block max-w-[180px] truncate text-[11px] text-red-600"
+                                  title="<?= $e($errMsg) ?>">
+                                <?= $e(mb_strimwidth($errMsg, 0, 60, '…')) ?>
+                            </span>
+                            <?php else: ?>
+                            <span class="text-[11px] text-on-surface-subtle">—</span>
+                            <?php endif; ?>
+                        </td>
+                        <td class="px-4 py-3">
+                            <?php if (in_array($status, ['failed', 'pending'], true)): ?>
+                            <button type="button"
+                                    class="btn-retry-one flex items-center gap-1 rounded-lg border border-outline-variant px-2 py-1 text-[11px] font-semibold text-on-surface hover:bg-surface-container transition-colors"
+                                    data-id="<?= $itemId ?>">
+                                <i data-lucide="refresh-cw" class="h-3 w-3"></i>
+                                Reintentar
+                            </button>
+                            <?php else: ?>
+                            <span class="text-[11px] text-on-surface-subtle">—</span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php endif; ?>
+    </div>
+
+    <!-- Cron setup guide card -->
+    <div class="mt-5 rounded-2xl border border-outline-variant/60 bg-white p-5 shadow-ambient">
+        <h3 class="mb-3 flex items-center gap-2 text-sm font-semibold text-on-surface">
+            <i data-lucide="terminal" class="h-4 w-4 text-primary"></i>
+            Referencia de configuración del worker
+        </h3>
+        <div class="space-y-3 text-xs text-on-surface-subtle">
+            <div class="grid gap-3 md:grid-cols-2">
+                <div class="rounded-xl border border-outline-variant/50 bg-surface-container-low p-3">
+                    <p class="mb-1.5 font-semibold text-on-surface">Cron (recomendado)</p>
+                    <p class="mb-1 text-on-surface-muted">Ejecuta el worker automáticamente cada 5 minutos:</p>
+                    <div class="flex items-center gap-2 rounded-lg border border-outline-variant bg-white px-2.5 py-1.5">
+                        <code class="flex-1 font-mono text-[11px] text-slate-700 break-all"><?= $e($cronEntry) ?></code>
+                    </div>
+                    <p class="mt-1.5 text-on-surface-muted">Edita el crontab con: <code class="rounded bg-surface-container px-1 font-mono">crontab -e</code></p>
+                </div>
+                <div class="rounded-xl border border-outline-variant/50 bg-surface-container-low p-3">
+                    <p class="mb-1.5 font-semibold text-on-surface">Ejecución manual</p>
+                    <p class="mb-1 text-on-surface-muted">Para enviar los correos pendientes de inmediato:</p>
+                    <div class="rounded-lg border border-outline-variant bg-white px-2.5 py-1.5">
+                        <code class="font-mono text-[11px] text-slate-700"><?= $e($workerCmd) ?></code>
+                    </div>
+                    <p class="mt-1.5 text-on-surface-muted">Ejecuta esto desde la raíz del proyecto en el servidor.</p>
+                </div>
+            </div>
+            <div class="rounded-xl border border-outline-variant/50 bg-surface-container-low p-3">
+                <p class="mb-1.5 font-semibold text-on-surface">Log del worker</p>
+                <p class="text-on-surface-muted">
+                    El cron redirige la salida a
+                    <code class="rounded bg-surface-container px-1 font-mono"><?= $e(BASE_PATH . '/storage/logs/mail_worker_cron.log') ?></code>.
+                    Revisa ese archivo si los correos no llegan — encontrarás errores SMTP detallados.
+                </p>
+                <p class="mt-1.5 text-on-surface-muted">
+                    Para ver en tiempo real:
+                    <code class="rounded bg-surface-container px-1 font-mono">tail -f <?= $e(BASE_PATH . '/storage/logs/mail_worker_cron.log') ?></code>
+                </p>
+            </div>
+        </div>
+    </div>
+
+</section>
+
+<script>
+(function () {
+    const CSRF    = <?= json_encode($csrfToken) ?>;
+    const actionPath = `${window.location.pathname.replace(/\/+$/, '')}/action`;
+    const ACTION  = `${window.location.origin}${actionPath}`;
+
+    const toast   = document.getElementById('worker-toast');
+
+    function showToast(msg, ok) {
+        if (!toast) return;
+        toast.textContent = msg;
+        toast.className = 'mb-4 rounded-xl border px-4 py-3 text-sm font-semibold '
+            + (ok ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                   : 'border-red-200 bg-red-50 text-red-800');
+        toast.classList.remove('hidden');
+        clearTimeout(toast._hide);
+        toast._hide = setTimeout(() => toast.classList.add('hidden'), 6000);
+    }
+
+    async function doAction(payload) {
+        try {
+            const fd = new FormData();
+            fd.append('_csrf_token', CSRF);
+            Object.entries(payload).forEach(([k, v]) => fd.append(k, v));
+            const res  = await fetch(ACTION, {
+                method: 'POST',
+                body: fd,
+                credentials: 'same-origin',
+                headers: { 'Accept': 'application/json' },
+            });
+            const data = await res.json();
+            showToast(data.message ?? (data.ok ? 'Listo.' : 'Error.'), data.ok === true);
+            if (data.ok) setTimeout(() => window.location.reload(), 1800);
+        } catch (err) {
+            showToast('Error de red: ' + err.message, false);
+        }
+    }
+
+    // Run worker
+    const btnRun = document.getElementById('btn-run-worker');
+    if (btnRun) {
+        btnRun.addEventListener('click', () => {
+                btnRun.disabled = true;
+                btnRun.innerHTML = '<i data-lucide="loader-circle" class="h-4 w-4 animate-spin"></i> Ejecutando…';
+                if (typeof lucide !== 'undefined') lucide.createIcons();
+                doAction({ action: 'run_worker' }).finally(() => {
+                    btnRun.disabled = false;
+                    btnRun.innerHTML = '<i data-lucide="play" class="h-4 w-4"></i> Ejecutar ahora';
+                    if (typeof lucide !== 'undefined') lucide.createIcons();
+                });
+            });
+        }
+
+    // Retry all failed
+    const btnRetryAll = document.getElementById('btn-retry-all');
+    if (btnRetryAll) {
+        btnRetryAll.addEventListener('click', () => doAction({ action: 'retry_all_failed' }));
+    }
+
+    // Copy cron entry
+    const btnCopy = document.getElementById('btn-copy-cron');
+    if (btnCopy) {
+        btnCopy.addEventListener('click', () => {
+            const text = document.getElementById('cron-entry-text')?.textContent ?? '';
+            navigator.clipboard.writeText(text).then(() => {
+                btnCopy.title = '¡Copiado!';
+                setTimeout(() => { btnCopy.title = 'Copiar'; }, 2000);
+            });
+        });
+    }
+
+    // Retry single
+    document.querySelectorAll('.btn-retry-one').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.dataset.id;
+            doAction({ action: 'retry_one', id });
+        });
+    });
+
+    // Live countdown: time left until the worker cycle that can process each pending email
+    const remainingEls = Array.from(document.querySelectorAll('.js-time-remaining'));
+    const WORKER_INTERVAL_SECONDS = 5 * 60;
+
+    const formatClock = (totalSeconds) => {
+        const sec = Math.max(0, Math.floor(totalSeconds));
+        const days = Math.floor(sec / 86400);
+        const hours = Math.floor((sec % 86400) / 3600);
+        const mins = Math.floor((sec % 3600) / 60);
+        const secs = sec % 60;
+        const base = `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+        return days > 0 ? `${String(days).padStart(2, '0')}:${base}` : base;
+    };
+
+    const nextWorkerRunTs = (fromTs, strict = false) => {
+        const k = Math.floor(fromTs / WORKER_INTERVAL_SECONDS);
+        const exact = k * WORKER_INTERVAL_SECONDS === fromTs;
+        if (!strict && exact) return fromTs;
+        return (k + 1) * WORKER_INTERVAL_SECONDS;
+    };
+
+    const refreshRemaining = () => {
+        const nowTs = Math.floor(Date.now() / 1000);
+        remainingEls.forEach((el) => {
+            const status = (el.dataset.status || '').toLowerCase();
+            const scheduledTs = Number(el.dataset.scheduledTs || 0);
+
+            if (status !== 'pending') {
+                el.textContent = '—';
+                return;
+            }
+            if (!Number.isFinite(scheduledTs) || scheduledTs <= 0) {
+                el.textContent = '—';
+                return;
+            }
+
+            // If scheduled time is in the future, show time to the first worker tick
+            // at/after scheduled_at. If already due, show time to next worker tick.
+            const targetRunTs = scheduledTs > nowTs
+                ? nextWorkerRunTs(scheduledTs, false)
+                : nextWorkerRunTs(nowTs, true);
+            el.textContent = formatClock(targetRunTs - nowTs);
+        });
+    };
+
+    refreshRemaining();
+    if (remainingEls.length > 0) {
+        setInterval(refreshRemaining, 1000);
+    }
+})();
+</script>

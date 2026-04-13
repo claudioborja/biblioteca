@@ -1,0 +1,12 @@
+RewriteEngine On
+
+# Block access to hidden files and directories
+RewriteRule (^\.|/\.) - [F]
+
+# Block access to sensitive files
+RewriteRule \.(env|log|sql|bak|ini|conf)$ - [F]
+
+# Redirect all requests to index.php (except existing files/dirs)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php [L,QSA]

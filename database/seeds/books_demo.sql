@@ -1,0 +1,201 @@
+-- books_demo.sql — Libros de demostración con portadas
+-- Ejecutar: mysql -u biblioteca -pbiblioteca biblioteca < database/seeds/books_demo.sql
+
+-- Actualizar el libro existente (id=1) con portada y datos completos
+UPDATE books SET
+    isbn_13           = '9780060531041',
+    authors           = '["Gabriel García Márquez"]',
+    publisher         = 'Harper Perennial',
+    publication_year  = 1967,
+    category_id       = 1,
+    description       = 'La historia de la familia Buendía a lo largo de siete generaciones en el mítico pueblo de Macondo. Obra cumbre del realismo mágico y de la literatura latinoamericana.',
+    pages             = 422,
+    language          = 'es',
+    cover_image       = '/biblioteca/uploads/covers/cien-anos-de-soledad.jpg',
+    location          = 'Estante A-1',
+    acquisition_price = 250.00,
+    replacement_cost  = 300.00,
+    acquisition_date  = '2024-01-15',
+    acquired_at       = '2024-01-15 10:00:00',
+    is_new_acquisition = 0,
+    total_copies      = 3,
+    available_copies  = 3,
+    is_active         = 1
+WHERE id = 1;
+
+-- Insertar los demás libros
+INSERT INTO books
+    (isbn_13, title, authors, publisher, publication_year, category_id,
+     description, pages, language, cover_image, location,
+     acquisition_price, replacement_cost, acquisition_date, acquired_at,
+     is_new_acquisition, total_copies, available_copies, is_active)
+VALUES
+
+-- 2. Don Quijote de la Mancha
+('9780060934347',
+ 'Don Quijote de la Mancha',
+ '["Miguel de Cervantes Saavedra"]',
+ 'Alfaguara',
+ 1605,
+ 1,
+ 'La novela más influyente de la literatura española y una de las obras más importantes de la literatura universal. Las aventuras del ingenioso hidalgo don Quijote y su leal escudero Sancho Panza.',
+ 1100, 'es',
+ '/biblioteca/uploads/covers/don-quijote.jpg',
+ 'Estante A-1',
+ 180.00, 220.00, '2024-01-20', '2024-01-20 09:00:00', 0, 2, 2, 1),
+
+-- 3. El principito
+('9780156012195',
+ 'El principito',
+ '["Antoine de Saint-Exupéry"]',
+ 'Harcourt',
+ 1943,
+ 18,
+ 'El clásico cuento de un piloto que conoce a un pequeño príncipe que ha viajado de planeta en planeta. Una obra atemporal sobre la amistad, el amor y los valores esenciales de la vida.',
+ 96, 'es',
+ '/biblioteca/uploads/covers/el-principito.jpg',
+ 'Estante F-3',
+ 120.00, 150.00, '2024-02-01', '2024-02-01 10:00:00', 0, 4, 4, 1),
+
+-- 4. 1984
+('9780451524935',
+ '1984',
+ '["George Orwell"]',
+ 'Signet Classics',
+ 1949,
+ 1,
+ 'En un futuro distópico bajo el control del Gran Hermano, Winston Smith trabaja para el Partido reescribiendo la historia. Una novela profética sobre la vigilancia, la propaganda y la resistencia.',
+ 328, 'es',
+ '/biblioteca/uploads/covers/1984.jpg',
+ 'Estante A-2',
+ 150.00, 180.00, '2024-02-10', '2024-02-10 11:00:00', 0, 3, 3, 1),
+
+-- 5. Sapiens
+('9780062316097',
+ 'Sapiens: De animales a dioses',
+ '["Yuval Noah Harari"]',
+ 'Harper Collins',
+ 2011,
+ 4,
+ 'Una breve historia de la humanidad que recorre 70.000 años de existencia humana, desde la aparición del Homo sapiens hasta la actualidad, analizando cómo llegamos a dominar la Tierra.',
+ 464, 'es',
+ '/biblioteca/uploads/covers/sapiens.jpg',
+ 'Estante D-2',
+ 280.00, 320.00, '2024-03-01', '2024-03-01 09:30:00', 0, 2, 2, 1),
+
+-- 6. El nombre de la rosa
+('9780156001311',
+ 'El nombre de la rosa',
+ '["Umberto Eco"]',
+ 'Harcourt',
+ 1980,
+ 1,
+ 'Un monje franciscano y su novicio investigan una serie de muertes misteriosas en una abadía medieval italiana. Una fascinante combinación de misterio medieval, semiología y filosofía.',
+ 502, 'es',
+ '/biblioteca/uploads/covers/el-nombre-de-la-rosa.jpg',
+ 'Estante A-3',
+ 220.00, 260.00, '2024-03-05', '2024-03-05 10:00:00', 0, 2, 2, 1),
+
+-- 7. Breve historia del tiempo
+('9780553380163',
+ 'Breve historia del tiempo',
+ '["Stephen Hawking"]',
+ 'Bantam Books',
+ 1988,
+ 2,
+ 'Desde el Big Bang hasta los agujeros negros, Hawking explica los temas más complejos de la física y la cosmología de forma accesible para el lector general.',
+ 212, 'es',
+ '/biblioteca/uploads/covers/breve-historia-tiempo.jpg',
+ 'Estante B-1',
+ 200.00, 240.00, '2024-03-10', '2024-03-10 11:00:00', 0, 2, 2, 1),
+
+-- 8. La metamorfosis
+('9781557427663',
+ 'La metamorfosis',
+ '["Franz Kafka"]',
+ 'Bantam Classics',
+ 1915,
+ 1,
+ 'Gregor Samsa despierta una mañana convertido en un enorme insecto. Una de las obras más influyentes de la literatura universal, explora los temas del aislamiento, la culpa y la alienación.',
+ 96, 'es',
+ '/biblioteca/uploads/covers/la-metamorfosis.jpg',
+ 'Estante A-4',
+ 110.00, 140.00, '2024-03-15', '2024-03-15 09:00:00', 1, 3, 3, 1),
+
+-- 9. Orgullo y prejuicio
+('9780141439518',
+ 'Orgullo y prejuicio',
+ '["Jane Austen"]',
+ 'Penguin Classics',
+ 1813,
+ 1,
+ 'La historia de amor entre Elizabeth Bennet y el orgulloso señor Darcy. Una exploración brillante de la sociedad inglesa del siglo XIX y uno de los romances más célebres de la literatura.',
+ 432, 'es',
+ '/biblioteca/uploads/covers/orgullo-y-prejuicio.jpg',
+ 'Estante A-5',
+ 150.00, 180.00, '2024-04-01', '2024-04-01 10:00:00', 1, 2, 2, 1),
+
+-- 10. El alquimista
+('9780062502179',
+ 'El alquimista',
+ '["Paulo Coelho"]',
+ 'Harper One',
+ 1988,
+ 1,
+ 'La historia de Santiago, un joven pastor andaluz que sueña con encontrar un tesoro junto a las pirámides de Egipto. Un relato sobre seguir los sueños y escuchar el corazón.',
+ 208, 'es',
+ '/biblioteca/uploads/covers/el-alquimista.jpg',
+ 'Estante A-6',
+ 160.00, 200.00, '2024-04-05', '2024-04-05 10:00:00', 1, 3, 3, 1),
+
+-- 11. Crimen y castigo
+('9780140449136',
+ 'Crimen y castigo',
+ '["Fiódor Dostoievski"]',
+ 'Penguin Classics',
+ 1866,
+ 1,
+ 'La novela sigue a Raskolnikov, un estudiante que comete un asesinato y lucha con la culpa y el arrepentimiento. Una profunda exploración psicológica de la naturaleza del crimen y la redención.',
+ 576, 'es',
+ '/biblioteca/uploads/covers/crimen-y-castigo.jpg',
+ 'Estante A-7',
+ 180.00, 220.00, '2024-04-10', '2024-04-10 11:00:00', 1, 2, 2, 1),
+
+-- 12. El señor de los anillos
+('9780618640157',
+ 'El señor de los anillos',
+ '["J.R.R. Tolkien"]',
+ 'Houghton Mifflin',
+ 1954,
+ 1,
+ 'La épica historia de la Comunidad del Anillo y su misión de destruir el Anillo Único para salvar la Tierra Media del poder del señor oscuro Sauron. La obra fundacional de la fantasía moderna.',
+ 1216, 'es',
+ '/biblioteca/uploads/covers/el-senor-de-los-anillos.jpg',
+ 'Estante A-8',
+ 320.00, 380.00, '2024-04-15', '2024-04-15 09:00:00', 1, 2, 2, 1),
+
+-- 13. Los juegos del hambre
+('9780439023481',
+ 'Los juegos del hambre',
+ '["Suzanne Collins"]',
+ 'Scholastic',
+ 2008,
+ 1,
+ 'En la distópica nación de Panem, Katniss Everdeen se ofrece voluntaria para participar en Los Juegos del Hambre en lugar de su hermana menor. Una historia de supervivencia, sacrificio y rebeldía.',
+ 374, 'es',
+ '/biblioteca/uploads/covers/juegos-del-hambre.jpg',
+ 'Estante F-4',
+ 200.00, 240.00, '2025-01-10', '2025-01-10 10:00:00', 1, 3, 3, 1),
+
+-- 14. Breve historia de casi todo
+('9780767908177',
+ 'Breve historia de casi todo',
+ '["Bill Bryson"]',
+ 'Broadway Books',
+ 2003,
+ 2,
+ 'Un recorrido fascinante por las ciencias: desde el Big Bang hasta el origen de la vida, con humor e inteligencia. Bryson explica los misterios del universo sin sacrificar la profundidad.',
+ 560, 'es',
+ NULL,
+ 'Estante B-2',
+ 240.00, 280.00, '2025-02-01', '2025-02-01 10:00:00', 1, 2, 2, 1);

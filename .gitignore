@@ -1,0 +1,54 @@
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies
+/vendor/
+/node_modules/
+
+# Build / test artifacts
+.phpunit.cache/
+coverage/
+*.log
+
+# Runtime generated files
+/storage/logs/*
+!/storage/logs/.gitkeep
+/storage/cache/*
+!/storage/cache/.gitkeep
+/storage/temp/*
+!/storage/temp/.gitkeep
+/storage/generated/*
+!/storage/generated/.gitkeep
+/storage/throttle/*
+!/storage/throttle/.gitkeep
+/storage/barcodes/*
+!/storage/barcodes/.gitkeep
+/storage/qrcodes/*
+!/storage/qrcodes/.gitkeep
+/storage/uploads/*
+!/storage/uploads/.gitkeep
+/storage/visits.count
+
+# Public uploads (user-generated)
+/public/uploads/covers/*
+!/public/uploads/covers/.gitkeep
+/public/uploads/news/*
+!/public/uploads/news/.gitkeep
+/public/uploads/resources/*
+!/public/uploads/resources/.gitkeep
+/public/uploads/settings/*
+!/public/uploads/settings/.gitkeep
+
+# Temporary exports
+/public/generated/*
+!/public/generated/.gitkeep
