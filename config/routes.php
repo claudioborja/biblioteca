@@ -149,7 +149,7 @@ $router->group(['prefix' => '/admin', 'middleware' => ['auth', 'role:admin,libra
     $router->post('/suggestions/{id}/acquire', [Controllers\SuggestionController::class, 'markAcquired'], 'admin.suggestion.acquire');
 
     // Reports
-    $router->get('/reports', [Controllers\ReportController::class, 'index'], 'admin.reports');
+    $router->get('/reports', [Controllers\ReportController::class, 'loans'], 'admin.reports');
     $router->get('/reports/loans', [Controllers\ReportController::class, 'loans'], 'admin.reports.loans');
     $router->get('/reports/inventory', [Controllers\ReportController::class, 'inventory'], 'admin.reports.inventory');
     $router->get('/reports/users', [Controllers\ReportController::class, 'users'], 'admin.reports.users');

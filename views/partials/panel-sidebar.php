@@ -11,8 +11,6 @@ if ($_query !== '') {
     parse_str($_query, $queryParams);
 }
 $auditTab = (string) ($queryParams['tab'] ?? 'general');
-$_reportSub = basename(rtrim($_path, '/'));
-$_reportMap = ['reports' => 'Resumen', 'loans' => 'Préstamos', 'inventory' => 'Inventario', 'users' => 'Usuarios', 'fines' => 'Multas', 'visits' => 'Visitas'];
 $active  = fn(string $p) => str_starts_with($_path, $p)
     ? 'bg-primary/8 text-primary font-semibold'
     : 'text-on-surface-muted hover:bg-surface-container hover:text-on-surface';
@@ -157,7 +155,6 @@ $isAccountSectionActive = str_starts_with($_path, '/account');
                 <div class="ml-6 mb-2 mt-0.5 space-y-0.5 border-l border-outline-variant/60 pl-2 text-[12px]">
                     <?php
                     $_rLinks = [
-                        'reports'   => ['Resumen',    '/admin/reports'],
                         'loans'     => ['Préstamos',  '/admin/reports/loans'],
                         'inventory' => ['Inventario', '/admin/reports/inventory'],
                         'users'     => ['Usuarios',   '/admin/reports/users'],
@@ -165,7 +162,7 @@ $isAccountSectionActive = str_starts_with($_path, '/account');
                         'visits'    => ['Visitas',    '/admin/reports/visits'],
                     ];
                     foreach ($_rLinks as $rKey => [$rLabel, $rPath]):
-                        $_rActive = ($rKey === 'reports') ? ($_path === '/admin/reports') : ($_path === $rPath);
+                        $_rActive = ($_path === $rPath);
                     ?>
                     <a href="<?= BASE_URL . $_e($rPath) ?>"
                        class="block rounded-md px-2 py-1.5 transition-colors duration-150 <?= $_rActive ? 'bg-white text-primary font-semibold' : 'text-on-surface-muted hover:bg-white hover:text-on-surface' ?>">

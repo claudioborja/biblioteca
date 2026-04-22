@@ -18,7 +18,7 @@
             <a href="<?= BASE_URL ?>/admin/branches" class="block px-3 py-2 rounded <?= $isActive('/admin/branches') ?>">Sucursales</a>
             <a href="<?= BASE_URL ?>/admin/news" class="block px-3 py-2 rounded <?= $isActive('/admin/news') ?>">Noticias</a>
             <a href="<?= BASE_URL ?>/admin/suggestions" class="block px-3 py-2 rounded <?= $isActive('/admin/suggestions') ?>">Sugerencias</a>
-            <a href="<?= BASE_URL ?>/admin/reports" class="block px-3 py-2 rounded <?= $isActive('/admin/reports') ?>">Reportes</a>
+            <a href="<?= BASE_URL ?>/admin/reports/loans" class="block px-3 py-2 rounded <?= $isActive('/admin/reports') ?>">Reportes</a>
             <a href="<?= BASE_URL ?>/admin/labels" class="block px-3 py-2 rounded <?= $isActive('/admin/labels') ?>">Códigos de barra</a>
         <?php endif; ?>
 

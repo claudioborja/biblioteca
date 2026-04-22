@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prueba Gráfico Colección por tipo</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #333; }
+        canvas { max-height: 400px; }
+        .info { background: #e3f2fd; padding: 10px; border-radius: 4px; margin-top: 20px; font-size: 14px; }
+        .check { color: green; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Gráfico: Colección por tipo</h1>
+        <p style="text-align: center; color: #666;">Los datos se muestran dentro de las barras en blanco</p>
+        
+        <div style="position: relative; height: 300px;">
+            <canvas id="chart-types"></canvas>
+        </div>
+        
+        <div class="info">
+            <p class="check">✓ Plugin datalabels: Cargado</p>
+            <p class="check">✓ Posición: Centrado dentro de barras</p>
+            <p class="check">✓ Color: Blanco (#ffffff)</p>
+            <p class="check">✓ Tamaño: 13px bold</p>
+            <p class="check">✓ Tooltip: Desactivado</p>
+        </div>
+    </div>
+
+    <script>
+        Chart.register(ChartDataLabels);
+        
+        const typesData = [894, 117, 30, 10, 5];
+        const totalResources = 1056;
+        const typesPercentages = typesData.map(v => v > 0 ? Math.round((v / totalResources) * 100) : 0);
+        
+        const ctx = document.getElementById('chart-types');
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['Libros físicos', 'Libros digitales', 'Otros', 'Revistas / Artículos', 'Tesis'],
+                datasets: [{
+                    data: typesData,
+                    backgroundColor: ['#3b82f6', '#8b5cf6', '#6b7280', '#10b981', '#f59e0b'],
+                    borderWidth: 0,
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: false },
+                    datalabels: {
+                        display: true,
+                        anchor: 'center',
+                        align: 'center',
+                        offset: 0,
+                        font: { size: 13, weight: 'bold' },
+                        color: '#ffffff',
+                        formatter: (value, context) => value + ' (' + typesPercentages[context.dataIndex] + '%)',
+                    }
+                },
+                scales: {
+                    x: { 
+                        beginAtZero: true, 
+                        grid: { color: '#e5e7eb' }, 
+                        ticks: { precision: 0 } 
+                    },
+                    y: { 
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>

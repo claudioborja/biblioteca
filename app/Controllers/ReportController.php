@@ -28,39 +28,8 @@ final class ReportController
 
     public function index(Request $request): Response
     {
-        $authUser = $this->auth();
-        if ($authUser === null) return $this->redirectLogin();
-        $settings = $this->settings();
-
-        $summary = [
-            'total_loans'   => (int)   $this->db->query('SELECT COUNT(*) FROM loans')->fetchColumn(),
-            'active_loans'  => (int)   $this->db->query("SELECT COUNT(*) FROM loans WHERE status = 'active'")->fetchColumn(),
-            'overdue_loans' => (int)   $this->db->query("SELECT COUNT(*) FROM loans WHERE status IN ('active','overdue') AND due_at < NOW()")->fetchColumn(),
-            'total_fines'   => (float) $this->db->query('SELECT COALESCE(SUM(amount), 0) FROM fines')->fetchColumn(),
-            'pending_fines' => (float) $this->db->query("SELECT COALESCE(SUM(amount - amount_paid), 0) FROM fines WHERE status IN ('pending','partially_paid')")->fetchColumn(),
-            'users'         => (int)   $this->db->query("SELECT COUNT(*) FROM users WHERE role = 'user'")->fetchColumn(),
-        ];
-
-        $topBooks = $this->db->query(
-            "SELECT b.title, COUNT(l.id) AS loans_count
-             FROM loans l JOIN resources b ON b.id = l.resource_id
-             GROUP BY b.id, b.title ORDER BY loans_count DESC LIMIT 6"
-        )->fetchAll();
-
-        $monthly = $this->db->query(
-            "SELECT DATE_FORMAT(loan_at, '%Y-%m') AS month_key, COUNT(*) AS loans_count
-             FROM loans WHERE loan_at >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
-             GROUP BY month_key ORDER BY month_key ASC"
-        )->fetchAll();
-
-        return Response::html($this->view->render('admin/reports/index', [
-            'title'         => 'Reportes - ' . ($settings['library_name'] ?? 'Biblioteca'),
-            'settings'      => $settings,
-            'auth_user'     => $authUser,
-            'summary'       => $summary,
-            'top_books'     => $topBooks,
-            'monthly_loans' => $monthly,
-        ], 'layouts/panel'));
+        if ($this->auth() === null) return $this->redirectLogin();
+        return Response::redirect(BASE_URL . '/admin/reports/loans');
     }
 
     // ── Report pages ──────────────────────────────────────────────────────────
