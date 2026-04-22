@@ -79,9 +79,6 @@ foreach ($overdueStmt as $loan) {
 
     $mailQueue->enqueueOverdueAlert($loan);
 
-    // TODO: Generar multa automática según fine_per_hour
-    // $fineService->createOverdueFine($loan);
-
     $logger->info("Loan marked overdue: #{$loan['id']}", [
         'user_id' => $loan['user_id'],
         'due_at'  => $loan['due_at'],

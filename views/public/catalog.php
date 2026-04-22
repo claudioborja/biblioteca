@@ -25,28 +25,22 @@ $resourceSupportMap = is_array($resource_support_map ?? null) ? $resource_suppor
 $resourceTypeLabels = [
     'book' => 'Libro',
     'ebook' => 'Libro digital',
-    'journal' => 'Revista',
-    'article' => 'Articulo',
-    'thesis' => 'Tesis',
-    'map' => 'Mapa',
-    'score' => 'Partitura',
-    'audiovisual' => 'Audiovisual',
-    'game' => 'Juego',
-    'kit' => 'Kit',
-    'other' => 'Otro',
+    'journal'     => 'Revista / Artículo',
+    'thesis'      => 'Tesis',
+    'map'         => 'Otro',
+    'score'       => 'Otro',
+    'audiovisual' => 'Otro',
+    'game'        => 'Otro',
+    'kit'         => 'Otro',
+    'other'       => 'Otro',
 ];
 
 $supportTypeLabels = [
-    'physical' => 'Fisico',
-    'digital' => 'Digital',
-    'audiovisual' => 'Audiovisual',
-    'journal' => 'Seriado',
-    'thesis' => 'Tesis',
-    'map' => 'Cartografico',
-    'score' => 'Partitura',
-    'kit' => 'Kit',
-    'game' => 'Juego',
-    'other' => 'Otro',
+    'physical' => 'Físico',
+    'digital'  => 'Digital',
+    'journal'  => 'Revista / Artículo',
+    'thesis'   => 'Tesis',
+    'other'    => 'Otro',
 ];
 
 function catalogUrl(array $override = []): string {

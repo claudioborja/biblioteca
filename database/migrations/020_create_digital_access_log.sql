@@ -8,12 +8,12 @@ CREATE TABLE IF NOT EXISTS digital_access_log (
     created_at  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     PRIMARY KEY (id),
-    INDEX idx_digital_access_resource (book_id),
+    INDEX idx_digital_access_resource (resource_id),
     INDEX idx_digital_access_user (user_id),
     INDEX idx_digital_access_created (created_at),
 
     CONSTRAINT fk_digital_access_resource
-        FOREIGN KEY (book_id) REFERENCES resources(id)
+        FOREIGN KEY (resource_id) REFERENCES resources(id)
         ON DELETE CASCADE,
     CONSTRAINT fk_digital_access_user
         FOREIGN KEY (user_id) REFERENCES users(id)

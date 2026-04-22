@@ -169,7 +169,8 @@ if ($publishedAtValue !== '') {
                         <div>
                             <label for="cover_image" class="news-label">Imagen de portada</label>
                             <input id="cover_image" name="cover_image" type="file" accept="image/jpeg,image/png,image/webp,image/gif" class="news-input">
-                            <p class="mt-1 text-xs text-on-surface-subtle">Formatos permitidos: JPG, PNG, WEBP, GIF. Maximo 5MB.</p>
+                            <p class="mt-1 text-xs text-on-surface-subtle">Formatos permitidos: JPG, PNG, WEBP, GIF. Máx. 5 MB.</p>
+                            <p id="cover-error-news" class="mt-1 hidden text-xs font-semibold text-red-600"></p>
                         </div>
 
                         <div id="cover-preview" class="news-cover-preview">
@@ -268,10 +269,29 @@ if ($publishedAtValue !== '') {
         publishedAtInput.value = pickerVal;
     };
 
+    const coverErrorEl = document.getElementById('cover-error-news');
+    const ALLOWED_NEWS = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    const MAX_NEWS_BYTES = 5 * 1024 * 1024;
+
     const updateCoverPreview = () => {
         if (!coverInput || !coverPreview) return;
+        if (coverErrorEl) { coverErrorEl.textContent = ''; coverErrorEl.classList.add('hidden'); }
+
         const file = coverInput.files && coverInput.files[0] ? coverInput.files[0] : null;
-        if (!file || (file.type && !file.type.startsWith('image/'))) {
+        if (!file) return;
+
+        if (!ALLOWED_NEWS.includes(file.type)) {
+            const msg = 'Formato no permitido. Usa JPG, PNG, WEBP o GIF.';
+            if (coverErrorEl) { coverErrorEl.textContent = msg; coverErrorEl.classList.remove('hidden'); }
+            if (typeof window.showLibraryToast === 'function') window.showLibraryToast('error', msg);
+            coverInput.value = '';
+            return;
+        }
+        if (file.size > MAX_NEWS_BYTES) {
+            const msg = `La imagen supera el límite de 5 MB (${(file.size / 1024 / 1024).toFixed(1)} MB).`;
+            if (coverErrorEl) { coverErrorEl.textContent = msg; coverErrorEl.classList.remove('hidden'); }
+            if (typeof window.showLibraryToast === 'function') window.showLibraryToast('error', msg);
+            coverInput.value = '';
             return;
         }
 

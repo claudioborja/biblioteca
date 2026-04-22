@@ -585,8 +585,9 @@ $countConfiguredInGroup = static function (array $groupKeys, array $settingsMap)
                                                            value="<?= $e($value) ?>"
                                                            class="w-full rounded-xl border border-outline-variant bg-white px-3 py-2 text-sm text-on-surface focus:border-primary focus:outline-none">
                                                 <?php elseif ($key === 'library_logo' || $key === 'library_favicon'): ?>
+                                                    <?php $previewId = 'settings-preview-' . $e($key); ?>
                                                     <?php if ($value !== ''): ?>
-                                                        <div class="mb-2 flex items-center gap-3">
+                                                        <div id="<?= $previewId ?>-current" class="mb-2 flex items-center gap-3">
                                                             <img src="<?= $e(BASE_URL . $value) ?>"
                                                                  alt="Imagen actual"
                                                                  class="h-10 max-w-[120px] rounded border border-outline-variant object-contain bg-surface-container-low p-1">
@@ -594,10 +595,16 @@ $countConfiguredInGroup = static function (array $groupKeys, array $settingsMap)
                                                         </div>
                                                     <?php endif; ?>
                                                     <input type="file"
+                                                           id="<?= $previewId ?>-input"
                                                            name="<?= $e($key) ?>"
                                                            accept="image/jpeg,image/png,image/webp,image/gif,image/x-icon"
                                                            class="w-full rounded-xl border border-outline-variant bg-white px-3 py-2 text-sm text-on-surface file:mr-3 file:rounded-lg file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-primary hover:file:bg-primary/20 focus:border-primary focus:outline-none">
                                                     <p class="mt-1 text-xs text-on-surface-muted">Máx. 2 MB · JPG, PNG, WEBP, GIF<?= $key === 'library_favicon' ? ', ICO' : '' ?></p>
+                                                    <p id="<?= $previewId ?>-error" class="mt-1 hidden text-xs font-semibold text-red-600"></p>
+                                                    <div id="<?= $previewId ?>-new" class="mt-2 hidden">
+                                                        <img id="<?= $previewId ?>-img" src="" alt="Vista previa"
+                                                             class="h-14 max-w-[140px] rounded-xl border border-outline-variant object-contain bg-surface-container-low p-1">
+                                                    </div>
                                                 <?php elseif (in_array($key, $textareaKeys, true)): ?>
                                                     <textarea
                                                         name="settings[<?= $e($key) ?>]"
@@ -870,5 +877,21 @@ $countConfiguredInGroup = static function (array $groupKeys, array $settingsMap)
             if (e.key === 'Enter') { e.preventDefault(); smtpSend.click(); }
         });
     }
+})();
+
+// Image upload preview for logo and favicon
+(() => {
+    ['library_logo', 'library_favicon'].forEach(key => {
+        window.initCoverImageInput?.({
+            inputEl:      document.getElementById(`settings-preview-${key}-input`),
+            previewWrap:  document.getElementById(`settings-preview-${key}-new`),
+            previewImg:   document.getElementById(`settings-preview-${key}-img`),
+            errorEl:      document.getElementById(`settings-preview-${key}-error`),
+            maxMB:        2,
+            allowedTypes: key === 'library_favicon'
+                ? ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/x-icon']
+                : ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
+        });
+    });
 })();
 </script>

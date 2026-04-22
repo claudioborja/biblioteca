@@ -15,20 +15,49 @@ final class Database
             $config = require BASE_PATH . '/config/database.php';
         }
 
-        $dsn = sprintf(
+        $dsn = self::buildMysqlDsn($config);
+
+        try {
+            $this->pdo = new \PDO(
+                $dsn,
+                $config['username'],
+                $config['password'],
+                $config['options'] ?? []
+            );
+        } catch (\PDOException $e) {
+            // On Linux, localhost may resolve to a missing Unix socket.
+            if (($config['host'] ?? '') === 'localhost' && self::isSocketResolutionFailure($e)) {
+                $fallbackConfig = $config;
+                $fallbackConfig['host'] = '127.0.0.1';
+                $fallbackDsn = self::buildMysqlDsn($fallbackConfig);
+
+                $this->pdo = new \PDO(
+                    $fallbackDsn,
+                    $config['username'],
+                    $config['password'],
+                    $config['options'] ?? []
+                );
+            } else {
+                throw $e;
+            }
+        }
+    }
+
+    private static function buildMysqlDsn(array $config): string
+    {
+        return sprintf(
             'mysql:host=%s;port=%d;dbname=%s;charset=%s',
             $config['host'],
             $config['port'],
             $config['database'],
             $config['charset'] ?? 'utf8mb4'
         );
+    }
 
-        $this->pdo = new \PDO(
-            $dsn,
-            $config['username'],
-            $config['password'],
-            $config['options'] ?? []
-        );
+    private static function isSocketResolutionFailure(\PDOException $e): bool
+    {
+        $message = strtolower($e->getMessage());
+        return str_contains($message, '[2002]') && str_contains($message, 'no such file or directory');
     }
 
     public static function connect(): \PDO

@@ -44,6 +44,8 @@ $router->group(['prefix' => '/account', 'middleware' => ['auth']], function (Rou
     $router->get('/profile', [Controllers\UserController::class, 'profile'], 'user.profile');
     $router->post('/profile', [Controllers\UserController::class, 'updateProfile'], 'user.profile.update');
     $router->get('/assignments', [Controllers\AssignmentController::class, 'myAssignments'], 'user.assignments');
+    $router->get('/suggestions', [Controllers\SuggestionController::class, 'userIndex'], 'user.suggestions');
+    $router->post('/suggestions', [Controllers\SuggestionController::class, 'userStore'], 'user.suggestion.store');
 });
 
 // ─── Teacher Panel ──────────────────────────────────────────────────────────
@@ -144,6 +146,7 @@ $router->group(['prefix' => '/admin', 'middleware' => ['auth', 'role:admin,libra
     $router->get('/suggestions', [Controllers\SuggestionController::class, 'adminIndex'], 'admin.suggestions');
     $router->post('/suggestions/{id}/approve', [Controllers\SuggestionController::class, 'approve'], 'admin.suggestion.approve');
     $router->post('/suggestions/{id}/reject', [Controllers\SuggestionController::class, 'reject'], 'admin.suggestion.reject');
+    $router->post('/suggestions/{id}/acquire', [Controllers\SuggestionController::class, 'markAcquired'], 'admin.suggestion.acquire');
 
     // Reports
     $router->get('/reports', [Controllers\ReportController::class, 'index'], 'admin.reports');
@@ -163,9 +166,11 @@ $router->group(['prefix' => '/admin', 'middleware' => ['auth', 'role:admin,libra
     $router->get('/reports/fines/export/pdf', [Controllers\ReportController::class, 'exportFinesPdf'], 'admin.reports.fines.pdf');
     $router->get('/reports/visits/export/csv', [Controllers\ReportController::class, 'exportVisitsCsv'], 'admin.reports.visits.csv');
     $router->get('/reports/visits/export/pdf', [Controllers\ReportController::class, 'exportVisitsPdf'], 'admin.reports.visits.pdf');
+    $router->post('/reports/visits/purge', [Controllers\ReportController::class, 'purgeVisits'], 'admin.reports.visits.purge');
 
     // Labels and codes
     $router->get('/labels', [Controllers\BarcodeController::class, 'labels'], 'admin.labels');
+    $router->post('/labels', [Controllers\BarcodeController::class, 'labels'], 'admin.labels.post');
     $router->get('/barcode/{isbn}', [Controllers\BarcodeController::class, 'barcode'], 'admin.barcode');
     $router->get('/qr/{type}/{id}', [Controllers\BarcodeController::class, 'qr'], 'admin.qr');
     $router->get('/user-card/{id}', [Controllers\BarcodeController::class, 'userCard'], 'admin.user.card');

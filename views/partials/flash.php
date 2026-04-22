@@ -147,6 +147,64 @@ foreach (['success', 'error', 'warning', 'info'] as $type) {
             render();
         };
     }
+
+    // ── Reutilizable: input de imagen con validación y preview ──
+    if (!window.initCoverImageInput) {
+        window.initCoverImageInput = (opts) => {
+            // opts: { inputEl, previewWrap, previewImg, errorEl, maxMB, allowedTypes }
+            const {
+                inputEl, previewWrap, previewImg, errorEl, maxMB = 5,
+                allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
+            } = opts;
+            if (!inputEl) return;
+
+            const ALLOWED_TYPES = allowedTypes;
+            const MAX_BYTES = maxMB * 1024 * 1024;
+
+            const showError = (msg) => {
+                if (errorEl) {
+                    errorEl.textContent = msg;
+                    errorEl.classList.remove('hidden');
+                }
+                if (typeof window.showLibraryToast === 'function') {
+                    window.showLibraryToast('error', msg);
+                }
+            };
+            const clearError = () => {
+                if (errorEl) {
+                    errorEl.textContent = '';
+                    errorEl.classList.add('hidden');
+                }
+            };
+            const clearPreview = () => {
+                if (previewWrap) previewWrap.classList.add('hidden');
+                if (previewImg) previewImg.src = '';
+            };
+
+            inputEl.addEventListener('change', () => {
+                clearError();
+                clearPreview();
+                const file = inputEl.files?.[0];
+                if (!file) return;
+
+                if (!ALLOWED_TYPES.includes(file.type)) {
+                    showError('Formato no permitido. Usa JPG, PNG, WEBP o GIF.');
+                    inputEl.value = '';
+                    return;
+                }
+                if (file.size > MAX_BYTES) {
+                    showError(`La imagen supera el límite de ${maxMB} MB (${(file.size / 1024 / 1024).toFixed(1)} MB).`);
+                    inputEl.value = '';
+                    return;
+                }
+
+                if (previewImg && previewWrap) {
+                    previewImg.src = URL.createObjectURL(file);
+                    previewWrap.classList.remove('hidden');
+                }
+            });
+        };
+    }
 })();
 </script>
 <?php if ($flashMessages !== []): ?>

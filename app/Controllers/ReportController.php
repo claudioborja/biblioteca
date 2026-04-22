@@ -89,10 +89,10 @@ final class ReportController
             'settings' => $this->settings(),
             'auth_user'=> $authUser,
             'kpis'     => [
-                'total'     => (int) $this->db->query("SELECT COUNT(*) FROM resources WHERE status = 'active'")->fetchColumn(),
-                'available' => (int) $this->db->query("SELECT COALESCE(SUM(available_copies),0) FROM resources WHERE status='active'")->fetchColumn(),
-                'on_loan'   => (int) $this->db->query("SELECT COALESCE(SUM(copies-available_copies),0) FROM resources WHERE status='active'")->fetchColumn(),
-                'inactive'  => (int) $this->db->query("SELECT COUNT(*) FROM resources WHERE status != 'active'")->fetchColumn(),
+                'total'     => (int) $this->db->query("SELECT COUNT(*) FROM resources WHERE is_active = 1")->fetchColumn(),
+                'available' => (int) $this->db->query("SELECT COALESCE(SUM(available_copies),0) FROM resources WHERE is_active = 1")->fetchColumn(),
+                'on_loan'   => (int) $this->db->query("SELECT COALESCE(SUM(total_copies - available_copies),0) FROM resources WHERE is_active = 1")->fetchColumn(),
+                'inactive'  => (int) $this->db->query("SELECT COUNT(*) FROM resources WHERE is_active = 0")->fetchColumn(),
             ],
         ], 'layouts/panel'));
     }
@@ -132,12 +132,27 @@ final class ReportController
     public function visits(Request $request): Response
     {
         $authUser = $this->auth(); if ($authUser === null) return $this->redirectLogin();
-        $kpis = $this->visitsKpis();
+        $kpis   = $this->visitsKpis();
+        $recent = $this->db->query(
+            "SELECT
+                COALESCE(u.name, 'Anónimo')  AS usuario,
+                COALESCE(u.email, '—')        AS correo,
+                COALESCE(u.role, 'guest')     AS rol,
+                v.page                        AS pagina,
+                v.ip_address                  AS ip,
+                v.referer                     AS referencia,
+                v.created_at
+             FROM visits_log v
+             LEFT JOIN users u ON u.id = v.user_id
+             ORDER BY v.created_at DESC
+             LIMIT 100"
+        )->fetchAll();
         return Response::html($this->view->render('admin/reports/visits', [
             'title'    => 'Visitas · Reportes',
             'settings' => $this->settings(),
             'auth_user'=> $authUser,
             'kpis'     => $kpis,
+            'recent'   => $recent,
         ], 'layouts/panel'));
     }
 
@@ -149,7 +164,7 @@ final class ReportController
 
         $rows = $this->db->query(
             "SELECT u.name AS usuario, u.user_number AS numero_usuario,
-                    r.title AS recurso, COALESCE(r.isbn, r.code, '') AS codigo,
+                    r.title AS recurso, COALESCE(r.isbn_13, '') AS codigo,
                     l.loan_at, l.due_at, l.returned_at, l.status
              FROM loans l
              JOIN users u ON u.id = l.user_id
@@ -175,14 +190,15 @@ final class ReportController
         if ($this->auth() === null) return $this->redirectLogin();
 
         $rows = $this->db->query(
-            "SELECT r.code, r.title, r.author, COALESCE(c.name,'Sin categoría') AS categoria,
-                    r.type, r.copies, r.available_copies,
-                    GREATEST(0, r.copies - r.available_copies) AS en_prestamo,
-                    COUNT(l.id) AS prestamos_totales, r.status
+            "SELECT COALESCE(r.isbn_13, '') AS codigo, r.title, r.authors, COALESCE(c.name,'Sin categoría') AS categoria,
+                    COALESCE(NULLIF(r.resource_type, ''), r.support_type, 'other') AS tipo,
+                    r.total_copies, r.available_copies,
+                    GREATEST(0, r.total_copies - r.available_copies) AS en_prestamo,
+                    COUNT(l.id) AS prestamos_totales, r.is_active
              FROM resources r
              LEFT JOIN categories c ON c.id = r.category_id
              LEFT JOIN loans l ON l.resource_id = r.id
-             GROUP BY r.id, r.code, r.title, r.author, c.name, r.type, r.copies, r.available_copies, r.status
+             GROUP BY r.id, r.isbn_13, r.title, r.authors, c.name, r.resource_type, r.support_type, r.total_copies, r.available_copies, r.is_active
              ORDER BY r.title ASC"
         )->fetchAll();
 
@@ -191,10 +207,10 @@ final class ReportController
         fputcsv($handle, ['Código', 'Título', 'Autor', 'Categoría', 'Tipo', 'Copias', 'Disponibles', 'En préstamo', 'Préstamos totales', 'Estado']);
         foreach ($rows as $r) {
             fputcsv($handle, [
-                $r['code'], $r['title'], $r['author'], $r['categoria'],
-                $r['type'], $r['copies'], $r['available_copies'],
+                $r['codigo'], $r['title'], $this->formatAuthors($r['authors'] ?? ''), $r['categoria'],
+                $r['tipo'], $r['total_copies'], $r['available_copies'],
                 $r['en_prestamo'], $r['prestamos_totales'],
-                $r['status'] === 'active' ? 'Activo' : 'Inactivo',
+                $this->resourceStatusLabel($r['is_active'] ?? 0),
             ]);
         }
         return $this->csvResponse($handle, 'inventario');
@@ -267,14 +283,93 @@ final class ReportController
     {
         if ($this->auth() === null) return $this->redirectLogin();
 
-        $rows = $this->visitsRows();
-        $handle = fopen('php://temp', 'r+');
-        fputs($handle, "\xEF\xBB\xBF");
-        fputcsv($handle, ['Usuario', 'Correo', 'Acción', 'IP', 'Fecha y hora']);
-        foreach ($rows as $r) {
-            fputcsv($handle, [$r['name'], $r['email'], $r['action'], $r['ip'] ?? '', $r['created_at'] ?? '']);
+        $rows        = $this->visitsRows();
+        $libraryName = $this->libraryName();
+
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet       = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Visitas');
+
+        $headerFill = ['fillType'    => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                       'startColor'  => ['argb' => 'FF1E3A5F']];
+        $headerFont = ['bold' => true, 'color' => ['argb' => 'FFFFFFFF'], 'size' => 10];
+        $borderThin = ['style' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                       'color' => ['argb' => 'FFD0D8E4']];
+        $allBorders = ['allBorders' => $borderThin];
+
+        // Fila 1 — título
+        $sheet->mergeCells('A1:G1');
+        $sheet->setCellValue('A1', $libraryName . ' · Reporte de visitas · ' . date('d/m/Y H:i'));
+        $sheet->getStyle('A1')->applyFromArray([
+            'font'      => ['bold' => true, 'size' => 13, 'color' => ['argb' => 'FF1E3A5F']],
+            'alignment' => ['horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_LEFT,
+                            'vertical'   => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER],
+        ]);
+        $sheet->getRowDimension(1)->setRowHeight(28);
+
+        // Fila 2 — cabeceras
+        $headers = ['A' => 'Usuario', 'B' => 'Correo', 'C' => 'Rol',
+                    'D' => 'Página',  'E' => 'IP',      'F' => 'Referencia', 'G' => 'Fecha y hora'];
+        foreach ($headers as $col => $label) {
+            $sheet->setCellValue($col . '2', $label);
         }
-        return $this->csvResponse($handle, 'visitas');
+        $sheet->getStyle('A2:G2')->applyFromArray([
+            'fill'      => $headerFill,
+            'font'      => $headerFont,
+            'alignment' => ['horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
+                            'vertical'   => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER],
+            'borders'   => $allBorders,
+        ]);
+        $sheet->getRowDimension(2)->setRowHeight(20);
+
+        // Filas de datos
+        $rolLabels = ['admin' => 'Admin', 'librarian' => 'Bibliotecario',
+                      'teacher' => 'Docente', 'user' => 'Socio', 'guest' => 'Anónimo'];
+        $dataRow = 3;
+        foreach ($rows as $r) {
+            $sheet->setCellValue('A' . $dataRow, (string) ($r['usuario']    ?? ''));
+            $sheet->setCellValue('B' . $dataRow, (string) ($r['correo']     ?? ''));
+            $sheet->setCellValue('C' . $dataRow, $rolLabels[$r['rol'] ?? ''] ?? (string) ($r['rol'] ?? ''));
+            $sheet->setCellValue('D' . $dataRow, (string) ($r['pagina']     ?? ''));
+            $sheet->setCellValue('E' . $dataRow, (string) ($r['ip']         ?? ''));
+            $sheet->setCellValue('F' . $dataRow, (string) ($r['referencia'] ?? ''));
+            $sheet->setCellValue('G' . $dataRow, (string) ($r['created_at'] ?? ''));
+
+            if ($dataRow % 2 === 0) {
+                $sheet->getStyle('A' . $dataRow . ':G' . $dataRow)->applyFromArray([
+                    'fill' => ['fillType'   => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                               'startColor' => ['argb' => 'FFF5F7FA']],
+                ]);
+            }
+            $sheet->getStyle('A' . $dataRow . ':G' . $dataRow)->applyFromArray(['borders' => $allBorders]);
+            $dataRow++;
+        }
+
+        // Anchos
+        foreach (['A' => 28, 'B' => 32, 'C' => 16, 'D' => 20, 'E' => 18, 'F' => 40, 'G' => 20] as $col => $w) {
+            $sheet->getColumnDimension($col)->setWidth($w);
+        }
+        $sheet->freezePane('A3');
+        $lastRow = max($dataRow - 1, 2);
+        $sheet->setAutoFilter('A2:G' . $lastRow);
+
+        $spreadsheet->getProperties()
+            ->setCreator($libraryName)
+            ->setTitle('Reporte de visitas')
+            ->setDescription('Generado el ' . date('d/m/Y H:i'));
+
+        $filename = 'visitas_' . date('Ymd_His') . '.xlsx';
+        ob_start();
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        $writer->save('php://output');
+        $xlsx = ob_get_clean();
+
+        return new Response((string) $xlsx, 200, [
+            'Content-Type'        => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Cache-Control'       => 'no-store, no-cache, must-revalidate',
+            'Pragma'              => 'no-cache',
+        ]);
     }
 
     // ── PDF exports ───────────────────────────────────────────────────────────
@@ -292,23 +387,183 @@ final class ReportController
              ORDER BY l.loan_at DESC"
         )->fetchAll();
 
-        $data = array_map(fn($r) => [
-            $r['name'], $r['user_number'], $r['title'],
-            substr($r['loan_at'] ?? '', 0, 10),
-            substr($r['due_at'] ?? '', 0, 10),
-            $this->loanStatusLabel($r['status']),
-        ], $rows);
+        $kpis = [
+            'total'    => (int) $this->db->query('SELECT COUNT(*) FROM loans')->fetchColumn(),
+            'active'   => (int) $this->db->query("SELECT COUNT(*) FROM loans WHERE status = 'active'")->fetchColumn(),
+            'overdue'  => (int) $this->db->query("SELECT COUNT(*) FROM loans WHERE status IN ('active','overdue') AND due_at < NOW()")->fetchColumn(),
+            'returned' => (int) $this->db->query("SELECT COUNT(*) FROM loans WHERE status = 'returned'")->fetchColumn(),
+        ];
 
-        $content = $this->pdf->renderSimpleTableReport([
-            'library'      => $this->libraryName(),
-            'title'        => 'Informe de Préstamos',
-            'subtitle'     => 'Historial completo de préstamos · Total: ' . count($rows),
-            'headers'      => ['Usuario', 'N° Usuario', 'Recurso', 'Préstamo', 'Vencimiento', 'Estado'],
-            'rows'         => $data,
-            'col_widths'   => [38, 22, 60, 22, 25, 19],
-            'orientation'  => 'L',
-            'generated_at' => date('d/m/Y H:i'),
-        ]);
+        // Serie de los últimos 14 días para incluir gráfico en el PDF
+        $seriesStmt = $this->db->query(
+            "SELECT DATE(loan_at) AS d, COUNT(*) AS n
+             FROM loans
+             WHERE loan_at >= DATE_SUB(CURDATE(), INTERVAL 13 DAY)
+             GROUP BY DATE(loan_at)
+             ORDER BY d ASC"
+        );
+        $seriesRaw = $seriesStmt->fetchAll();
+        $seriesMap = [];
+        foreach ($seriesRaw as $row) {
+            $seriesMap[(string) ($row['d'] ?? '')] = (int) ($row['n'] ?? 0);
+        }
+
+        $chartLabels = [];
+        $chartValues = [];
+        for ($i = 13; $i >= 0; $i--) {
+            $date = date('Y-m-d', strtotime('-' . $i . ' days'));
+            $chartLabels[] = date('d/m', strtotime($date));
+            $chartValues[] = (int) ($seriesMap[$date] ?? 0);
+        }
+
+        $tcpdfPath = '/usr/share/php/tcpdf/tcpdf.php';
+        if (!class_exists('TCPDF')) {
+            if (!file_exists($tcpdfPath)) {
+                throw new \RuntimeException('TCPDF no está disponible en el servidor.');
+            }
+            require_once $tcpdfPath;
+        }
+
+        $pdf = new \TCPDF('L', 'mm', 'A4', true, 'UTF-8', false);
+        $pdf->SetCreator($this->libraryName());
+        $pdf->SetAuthor($this->libraryName());
+        $pdf->SetTitle('Informe de Préstamos');
+        $pdf->SetMargins(12, 12, 12);
+        $pdf->SetAutoPageBreak(true, 14);
+        $pdf->AddPage();
+
+        // Header del reporte
+        $pdf->SetFillColor(30, 58, 95);
+        $pdf->Rect(0, 0, 297, 24, 'F');
+        $pdf->SetTextColor(255, 255, 255);
+        $pdf->SetFont('dejavusans', 'B', 13);
+        $pdf->SetXY(12, 7);
+        $pdf->Cell(190, 6, $this->libraryName() . ' · Informe de Préstamos', 0, 0, 'L');
+        $pdf->SetFont('dejavusans', '', 9);
+        $pdf->Cell(80, 6, 'Generado: ' . date('d/m/Y H:i'), 0, 0, 'R');
+
+        // KPIs
+        $pdf->SetTextColor(30, 41, 59);
+        $pdf->SetY(29);
+        $pdf->SetFont('dejavusans', 'B', 10);
+        $pdf->Cell(70, 7, 'Total acumulado: ' . number_format((int) ($kpis['total'] ?? 0)), 0, 0, 'L');
+        $pdf->Cell(70, 7, 'Activos: ' . number_format((int) ($kpis['active'] ?? 0)), 0, 0, 'L');
+        $pdf->Cell(90, 7, 'Vencidos: ' . number_format((int) ($kpis['overdue'] ?? 0)), 0, 0, 'L');
+        $pdf->Cell(55, 7, 'Devueltos: ' . number_format((int) ($kpis['returned'] ?? 0)), 0, 1, 'R');
+
+        // Gráfico de línea con área (14 días), igual al estilo del dashboard
+        $chartX = 12.0;
+        $chartY = 40.0;
+        $chartW = 273.0;
+        $chartH = 56.0;
+        $innerPad = 5.0;
+        $plotX = $chartX + $innerPad;
+        $plotY = $chartY + 8;
+        $plotW = $chartW - ($innerPad * 2);
+        $plotH = $chartH - 16;
+
+        $pdf->SetDrawColor(203, 213, 225);
+        $pdf->SetFillColor(248, 250, 252);
+        $pdf->RoundedRect($chartX, $chartY, $chartW, $chartH, 2.5, '1111', 'DF');
+        $pdf->SetFont('dejavusans', 'B', 9);
+        $pdf->SetTextColor(51, 65, 85);
+        $pdf->SetXY($chartX + 3, $chartY + 2);
+        $pdf->Cell(120, 5, 'Tendencia de préstamos (últimos 14 días)', 0, 0, 'L');
+
+        $maxValue = max(1, ...$chartValues);
+        $countPoints = max(1, count($chartValues));
+        $stepX = $countPoints > 1 ? ($plotW / ($countPoints - 1)) : 0;
+
+        // Línea base
+        $pdf->SetDrawColor(180, 190, 205);
+        $pdf->Line($plotX, $plotY + $plotH, $plotX + $plotW, $plotY + $plotH);
+
+        $points = [];
+        foreach ($chartValues as $i => $value) {
+            $x = $plotX + ($stepX * $i);
+            $lineHeight = $maxValue > 0 ? ($value / $maxValue) * ($plotH - 6) : 0;
+            $y = $plotY + $plotH - $lineHeight;
+            $points[] = ['x' => $x, 'y' => $y];
+
+            // Relleno vertical suave bajo la curva (simula área de la línea)
+            $pdf->SetDrawColor(191, 219, 254);
+            $pdf->Line($x, $plotY + $plotH, $x, $y);
+
+            // Etiquetas de eje X (cada 2 días)
+            if ($i % 2 === 0) {
+                $pdf->SetFont('dejavusans', '', 6.5);
+                $pdf->SetTextColor(100, 116, 139);
+                $pdf->SetXY($x - 4, $plotY + $plotH + 1.2);
+                $pdf->Cell(8, 4, $chartLabels[$i], 0, 0, 'C');
+            }
+        }
+
+        // Línea principal
+        $pdf->SetDrawColor(59, 130, 246);
+        $pdf->SetLineWidth(1.2);
+        for ($i = 1; $i < count($points); $i++) {
+            $pdf->Line($points[$i - 1]['x'], $points[$i - 1]['y'], $points[$i]['x'], $points[$i]['y']);
+        }
+
+        // Puntos
+        $pdf->SetFillColor(59, 130, 246);
+        foreach ($points as $p) {
+            $pdf->Circle($p['x'], $p['y'], 0.9, 0, 360, 'F');
+        }
+        $pdf->SetLineWidth(0.2);
+
+        // Tabla de registros
+        $pdf->SetY($chartY + $chartH + 5);
+        $pdf->SetFont('dejavusans', 'B', 8);
+        $pdf->SetFillColor(30, 58, 95);
+        $pdf->SetTextColor(255, 255, 255);
+        $pdf->SetDrawColor(148, 163, 184);
+
+        $headers = ['Usuario', 'N° Usuario', 'Recurso', 'Préstamo', 'Vencimiento', 'Estado'];
+        $widths  = [52, 28, 96, 30, 30, 25];
+
+        foreach ($headers as $i => $h) {
+            $pdf->Cell($widths[$i], 8, $h, 1, 0, 'C', true);
+        }
+        $pdf->Ln();
+
+        $pdf->SetFont('dejavusans', '', 7.5);
+        $pdf->SetTextColor(30, 41, 59);
+        $pdf->SetDrawColor(226, 232, 240);
+
+        foreach ($rows as $ri => $r) {
+            if ($pdf->GetY() > 190) {
+                $pdf->AddPage();
+                $pdf->SetFont('dejavusans', 'B', 8);
+                $pdf->SetFillColor(30, 58, 95);
+                $pdf->SetTextColor(255, 255, 255);
+                $pdf->SetDrawColor(148, 163, 184);
+                foreach ($headers as $i => $h) {
+                    $pdf->Cell($widths[$i], 8, $h, 1, 0, 'C', true);
+                }
+                $pdf->Ln();
+                $pdf->SetFont('dejavusans', '', 7.5);
+                $pdf->SetTextColor(30, 41, 59);
+                $pdf->SetDrawColor(226, 232, 240);
+            }
+
+            $pdf->SetFillColor($ri % 2 === 0 ? 255 : 246, $ri % 2 === 0 ? 255 : 248, $ri % 2 === 0 ? 255 : 252);
+            $cells = [
+                (string) ($r['name'] ?? ''),
+                (string) ($r['user_number'] ?? ''),
+                (string) ($r['title'] ?? ''),
+                substr((string) ($r['loan_at'] ?? ''), 0, 10),
+                substr((string) ($r['due_at'] ?? ''), 0, 10),
+                $this->loanStatusLabel((string) ($r['status'] ?? '')),
+            ];
+            foreach ($cells as $i => $cell) {
+                $maxLen = $i === 2 ? 70 : 45;
+                $pdf->Cell($widths[$i], 6, mb_strimwidth($cell, 0, $maxLen, '…', 'UTF-8'), 1, 0, 'L', true);
+            }
+            $pdf->Ln();
+        }
+
+        $content = $pdf->Output('', 'S');
         return $this->pdfResponse($content, 'prestamos');
     }
 
@@ -317,18 +572,18 @@ final class ReportController
         if ($this->auth() === null) return $this->redirectLogin();
 
         $rows = $this->db->query(
-            "SELECT r.code, r.title, r.author, COALESCE(c.name,'Sin categoría') AS categoria,
-                    r.copies, r.available_copies,
-                    GREATEST(0, r.copies - r.available_copies) AS en_prestamo, r.status
+            "SELECT COALESCE(r.isbn_13, '') AS codigo, r.title, r.authors, COALESCE(c.name,'Sin categoría') AS categoria,
+                    r.total_copies, r.available_copies,
+                    GREATEST(0, r.total_copies - r.available_copies) AS en_prestamo, r.is_active
              FROM resources r
              LEFT JOIN categories c ON c.id = r.category_id
              ORDER BY r.title ASC"
         )->fetchAll();
 
         $data = array_map(fn($r) => [
-            $r['code'], $r['title'], $r['author'], $r['categoria'],
-            $r['copies'], $r['available_copies'], $r['en_prestamo'],
-            $r['status'] === 'active' ? 'Activo' : 'Inactivo',
+            $r['codigo'], $r['title'], $this->formatAuthors($r['authors'] ?? ''), $r['categoria'],
+            $r['total_copies'], $r['available_copies'], $r['en_prestamo'],
+            $this->resourceStatusLabel($r['is_active'] ?? 0),
         ], $rows);
 
         $content = $this->pdf->renderSimpleTableReport([
@@ -421,20 +676,159 @@ final class ReportController
         if ($this->auth() === null) return $this->redirectLogin();
 
         $rows = $this->visitsRows();
-        $data = array_map(fn($r) => [
-            $r['name'], $r['email'], $r['action'], $r['ip'] ?? '', $r['created_at'] ?? '',
-        ], $rows);
+        $kpis = $this->visitsKpis();
 
-        $content = $this->pdf->renderSimpleTableReport([
-            'library'      => $this->libraryName(),
-            'title'        => 'Informe de Visitas',
-            'subtitle'     => 'Log de accesos al sistema · Total: ' . count($rows),
-            'headers'      => ['Usuario', 'Correo', 'Acción', 'IP', 'Fecha y hora'],
-            'rows'         => $data,
-            'col_widths'   => [40, 55, 50, 30, 35],
-            'orientation'  => 'L',
-            'generated_at' => date('d/m/Y H:i'),
-        ]);
+        // Serie de los últimos 14 días para incluir gráfico en el PDF
+        $seriesStmt = $this->db->query(
+            "SELECT DATE(created_at) AS d, COUNT(*) AS n
+             FROM visits_log
+             WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 13 DAY)
+             GROUP BY DATE(created_at)
+             ORDER BY d ASC"
+        );
+        $seriesRaw = $seriesStmt->fetchAll();
+        $seriesMap = [];
+        foreach ($seriesRaw as $row) {
+            $seriesMap[(string) ($row['d'] ?? '')] = (int) ($row['n'] ?? 0);
+        }
+        $chartLabels = [];
+        $chartValues = [];
+        for ($i = 13; $i >= 0; $i--) {
+            $date = date('Y-m-d', strtotime('-' . $i . ' days'));
+            $chartLabels[] = date('d/m', strtotime($date));
+            $chartValues[] = (int) ($seriesMap[$date] ?? 0);
+        }
+
+        $tcpdfPath = '/usr/share/php/tcpdf/tcpdf.php';
+        if (!class_exists('TCPDF')) {
+            if (!file_exists($tcpdfPath)) {
+                throw new \RuntimeException('TCPDF no está disponible en el servidor.');
+            }
+            require_once $tcpdfPath;
+        }
+
+        $pdf = new \TCPDF('L', 'mm', 'A4', true, 'UTF-8', false);
+        $pdf->SetCreator($this->libraryName());
+        $pdf->SetAuthor($this->libraryName());
+        $pdf->SetTitle('Informe de Visitas');
+        $pdf->SetMargins(12, 12, 12);
+        $pdf->SetAutoPageBreak(true, 14);
+        $pdf->AddPage();
+
+        // Header del reporte
+        $pdf->SetFillColor(30, 58, 95);
+        $pdf->Rect(0, 0, 297, 24, 'F');
+        $pdf->SetTextColor(255, 255, 255);
+        $pdf->SetFont('dejavusans', 'B', 13);
+        $pdf->SetXY(12, 7);
+        $pdf->Cell(190, 6, $this->libraryName() . ' · Informe de Visitas', 0, 0, 'L');
+        $pdf->SetFont('dejavusans', '', 9);
+        $pdf->Cell(80, 6, 'Generado: ' . date('d/m/Y H:i'), 0, 0, 'R');
+
+        // KPIs
+        $pdf->SetTextColor(30, 41, 59);
+        $pdf->SetY(29);
+        $pdf->SetFont('dejavusans', 'B', 10);
+        $pdf->Cell(70, 7, 'Total acumulado: ' . number_format((int) ($kpis['total'] ?? 0)), 0, 0, 'L');
+        $pdf->Cell(70, 7, 'Ultimos 30 días: ' . number_format((int) ($kpis['visits_30d'] ?? 0)), 0, 0, 'L');
+        $pdf->Cell(90, 7, 'Visitantes únicos (30 d): ' . number_format((int) ($kpis['unique_users_30d'] ?? 0)), 0, 0, 'L');
+        $pdf->Cell(55, 7, 'Hoy: ' . number_format((int) ($kpis['visits_today'] ?? 0)), 0, 1, 'R');
+
+        // Gráfico de barras (14 días)
+        $chartX = 12.0;
+        $chartY = 40.0;
+        $chartW = 273.0;
+        $chartH = 56.0;
+        $innerPad = 5.0;
+        $plotX = $chartX + $innerPad;
+        $plotY = $chartY + 8;
+        $plotW = $chartW - ($innerPad * 2);
+        $plotH = $chartH - 16;
+
+        $pdf->SetDrawColor(203, 213, 225);
+        $pdf->SetFillColor(248, 250, 252);
+        $pdf->RoundedRect($chartX, $chartY, $chartW, $chartH, 2.5, '1111', 'DF');
+        $pdf->SetFont('dejavusans', 'B', 9);
+        $pdf->SetTextColor(51, 65, 85);
+        $pdf->SetXY($chartX + 3, $chartY + 2);
+        $pdf->Cell(120, 5, 'Tendencia de visitas (últimos 14 días)', 0, 0, 'L');
+
+        $maxValue = max(1, ...$chartValues);
+        $countBars = max(1, count($chartValues));
+        $slotW = $plotW / $countBars;
+        $barW = max(2.5, $slotW * 0.6);
+
+        // Línea base
+        $pdf->SetDrawColor(180, 190, 205);
+        $pdf->Line($plotX, $plotY + $plotH, $plotX + $plotW, $plotY + $plotH);
+
+        foreach ($chartValues as $i => $value) {
+            $x = $plotX + ($slotW * $i) + (($slotW - $barW) / 2);
+            $barHeight = $maxValue > 0 ? ($value / $maxValue) * ($plotH - 6) : 0;
+            $y = $plotY + $plotH - $barHeight;
+
+            $pdf->SetFillColor(245, 158, 11);
+            $pdf->Rect($x, $y, $barW, $barHeight, 'F');
+
+            if ($i % 2 === 0) {
+                $pdf->SetFont('dejavusans', '', 6.5);
+                $pdf->SetTextColor(100, 116, 139);
+                $pdf->SetXY($x - 2, $plotY + $plotH + 1.2);
+                $pdf->Cell($barW + 4, 4, $chartLabels[$i], 0, 0, 'C');
+            }
+        }
+
+        // Tabla de registros
+        $pdf->SetY($chartY + $chartH + 5);
+        $pdf->SetFont('dejavusans', 'B', 8);
+        $pdf->SetFillColor(30, 58, 95);
+        $pdf->SetTextColor(255, 255, 255);
+        $pdf->SetDrawColor(148, 163, 184);
+
+        $headers = ['Usuario', 'Correo', 'Rol', 'Página', 'IP', 'Fecha y hora'];
+        $widths  = [52, 60, 22, 58, 30, 40];
+
+        foreach ($headers as $i => $h) {
+            $pdf->Cell($widths[$i], 8, $h, 1, 0, 'C', true);
+        }
+        $pdf->Ln();
+
+        $pdf->SetFont('dejavusans', '', 7.5);
+        $pdf->SetTextColor(30, 41, 59);
+        $pdf->SetDrawColor(226, 232, 240);
+
+        foreach ($rows as $ri => $r) {
+            if ($pdf->GetY() > 190) {
+                $pdf->AddPage();
+                $pdf->SetFont('dejavusans', 'B', 8);
+                $pdf->SetFillColor(30, 58, 95);
+                $pdf->SetTextColor(255, 255, 255);
+                $pdf->SetDrawColor(148, 163, 184);
+                foreach ($headers as $i => $h) {
+                    $pdf->Cell($widths[$i], 8, $h, 1, 0, 'C', true);
+                }
+                $pdf->Ln();
+                $pdf->SetFont('dejavusans', '', 7.5);
+                $pdf->SetTextColor(30, 41, 59);
+                $pdf->SetDrawColor(226, 232, 240);
+            }
+
+            $pdf->SetFillColor($ri % 2 === 0 ? 255 : 246, $ri % 2 === 0 ? 255 : 248, $ri % 2 === 0 ? 255 : 252);
+            $cells = [
+                (string) ($r['usuario'] ?? ''),
+                (string) ($r['correo'] ?? ''),
+                $this->roleLabel((string) ($r['rol'] ?? '')),
+                (string) ($r['pagina'] ?? ''),
+                (string) ($r['ip'] ?? ''),
+                substr((string) ($r['created_at'] ?? ''), 0, 16),
+            ];
+            foreach ($cells as $i => $cell) {
+                $pdf->Cell($widths[$i], 6, mb_strimwidth($cell, 0, 55, '…', 'UTF-8'), 1, 0, 'L', true);
+            }
+            $pdf->Ln();
+        }
+
+        $content = $pdf->Output('', 'S');
         return $this->pdfResponse($content, 'visitas');
     }
 
@@ -461,40 +855,79 @@ final class ReportController
         ]);
     }
 
+    public function purgeVisits(Request $request): Response
+    {
+        $authUser = $this->auth();
+        if ($authUser === null) return $this->redirectLogin();
+        if (($authUser['role'] ?? '') !== 'admin') {
+            Session::flash('error', 'No tienes permiso para realizar esta acción.');
+            return Response::redirect(BASE_URL . '/admin/reports/visits');
+        }
+
+        $mode     = $request->post('mode', '');
+        $days     = (int) $request->post('days', 0);
+        $dateFrom = (string) $request->post('date_from', '');
+        $dateTo   = (string) $request->post('date_to', '');
+
+        try {
+            $deleted = 0;
+            if ($mode === 'all') {
+                $stmt = $this->db->query("DELETE FROM visits_log");
+                $deleted = $stmt->rowCount();
+
+            } elseif ($mode === 'older' && $days > 0) {
+                $stmt = $this->db->prepare(
+                    "DELETE FROM visits_log WHERE created_at < DATE_SUB(NOW(), INTERVAL :d DAY)"
+                );
+                $stmt->execute([':d' => $days]);
+                $deleted = $stmt->rowCount();
+
+            } elseif ($mode === 'range' && $dateFrom !== '' && $dateTo !== '') {
+                $stmt = $this->db->prepare(
+                    "DELETE FROM visits_log WHERE DATE(created_at) BETWEEN :f AND :t"
+                );
+                $stmt->execute([':f' => $dateFrom, ':t' => $dateTo]);
+                $deleted = $stmt->rowCount();
+
+            } else {
+                Session::flash('error', 'Opción de limpieza no válida.');
+                return Response::redirect(BASE_URL . '/admin/reports/visits');
+            }
+
+            Session::flash('success', number_format($deleted) . ' registro(s) de visitas eliminado(s).');
+        } catch (\Throwable $e) {
+            Session::flash('error', 'Error al eliminar registros: ' . $e->getMessage());
+        }
+
+        return Response::redirect(BASE_URL . '/admin/reports/visits');
+    }
+
     private function visitsKpis(): array
     {
-        $hasAudit = $this->hasTable('audit_logs');
-        if ($hasAudit) {
-            return [
-                'logins_30d'       => (int) $this->db->query("SELECT COUNT(*) FROM audit_logs WHERE action LIKE '%login%' AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)")->fetchColumn(),
-                'unique_users_30d' => (int) $this->db->query("SELECT COUNT(DISTINCT user_id) FROM audit_logs WHERE action LIKE '%login%' AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)")->fetchColumn(),
-                'failed_30d'       => (int) $this->db->query("SELECT COUNT(*) FROM audit_logs WHERE action LIKE '%failed%' AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)")->fetchColumn(),
-                'last_login'       => (string) ($this->db->query("SELECT created_at FROM audit_logs WHERE action LIKE '%login%' ORDER BY created_at DESC LIMIT 1")->fetchColumn() ?: '—'),
-            ];
-        }
-        $count = (int) $this->db->query("SELECT COUNT(*) FROM users WHERE last_login_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)")->fetchColumn();
         return [
-            'logins_30d'       => $count,
-            'unique_users_30d' => $count,
-            'failed_30d'       => 0,
-            'last_login'       => (string) ($this->db->query("SELECT last_login_at FROM users WHERE last_login_at IS NOT NULL ORDER BY last_login_at DESC LIMIT 1")->fetchColumn() ?: '—'),
+            'total'            => (int) $this->db->query("SELECT COUNT(*) FROM visits_log")->fetchColumn(),
+            'visits_30d'       => (int) $this->db->query("SELECT COUNT(*) FROM visits_log WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)")->fetchColumn(),
+            'unique_users_30d' => (int) $this->db->query("SELECT COUNT(DISTINCT COALESCE(CAST(user_id AS CHAR), ip_address)) FROM visits_log WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)")->fetchColumn(),
+            'visits_today'     => (int) $this->db->query("SELECT COUNT(*) FROM visits_log WHERE DATE(created_at) = CURDATE()")->fetchColumn(),
+            'last_visit'       => (string) ($this->db->query("SELECT created_at FROM visits_log ORDER BY created_at DESC LIMIT 1")->fetchColumn() ?: '—'),
         ];
     }
 
     private function visitsRows(): array
     {
-        if ($this->hasTable('audit_logs')) {
-            return $this->db->query(
-                "SELECT u.name, u.email, a.action, a.ip_address AS ip, a.created_at
-                 FROM audit_logs a
-                 LEFT JOIN users u ON u.id = a.user_id
-                 ORDER BY a.created_at DESC
-                 LIMIT 5000"
-            )->fetchAll();
-        }
         return $this->db->query(
-            "SELECT name, email, 'login' AS action, NULL AS ip, last_login_at AS created_at
-             FROM users WHERE last_login_at IS NOT NULL ORDER BY last_login_at DESC"
+            "SELECT
+                COALESCE(u.name, 'Anónimo')      AS usuario,
+                COALESCE(u.email, '—')            AS correo,
+                COALESCE(u.role, 'guest')         AS rol,
+                v.page                            AS pagina,
+                v.ip_address                      AS ip,
+                v.referer                         AS referencia,
+                v.created_at
+             FROM visits_log v
+             LEFT JOIN users u ON u.id = v.user_id
+             ORDER BY v.created_at DESC
+             LIMIT 10000"
         )->fetchAll();
     }
 
@@ -509,6 +942,32 @@ final class ReportController
     private function libraryName(): string
     {
         return (string) ($this->settings()['library_name'] ?? 'Biblioteca');
+    }
+
+    private function formatAuthors(mixed $authors): string
+    {
+        if (is_array($authors)) {
+            return implode(', ', array_map(static fn(mixed $v): string => trim((string) $v), $authors));
+        }
+
+        $text = trim((string) $authors);
+        if ($text === '') {
+            return '';
+        }
+
+        if (str_starts_with($text, '[')) {
+            $decoded = json_decode($text, true);
+            if (is_array($decoded)) {
+                return implode(', ', array_map(static fn(mixed $v): string => trim((string) $v), $decoded));
+            }
+        }
+
+        return $text;
+    }
+
+    private function resourceStatusLabel(mixed $isActive): string
+    {
+        return (int) $isActive === 1 ? 'Activo' : 'Inactivo';
     }
 
     private function loanStatusLabel(string $s): string

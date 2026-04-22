@@ -190,13 +190,227 @@ final class LoanController extends BaseController
 
     public function create(Request $request): Response
     {
-        Session::flash('info', 'La creación manual de préstamos estará disponible próximamente.');
-        return Response::redirect(BASE_URL . '/admin/loans');
+        $authUser = $this->resolveAuthUser();
+        if ($authUser === null) {
+            Session::destroy();
+            return Response::redirect(BASE_URL . '/login');
+        }
+
+        $settings = $this->panelSettings();
+
+        // Load users and available physical resources for the form selects
+        $users = $this->db->query(
+            "SELECT id, name, email, user_number, status
+             FROM users
+             WHERE status = 'active'
+             ORDER BY name ASC"
+        )->fetchAll();
+
+        $resources = $this->db->query(
+            "SELECT id, title, authors, isbn, available_copies, branch_id
+             FROM resources
+             WHERE type = 'physical' AND is_active = 1 AND available_copies > 0
+             ORDER BY title ASC"
+        )->fetchAll();
+
+        $loanHours = (int) $this->db
+            ->query("SELECT value FROM system_settings WHERE `key` = 'loan_hours' LIMIT 1")
+            ->fetchColumn();
+        if ($loanHours <= 0) {
+            $loanHours = 72;
+        }
+
+        return Response::html($this->view->render('admin/loans/create', [
+            'title'     => 'Nuevo préstamo - ' . ($settings['library_name'] ?? 'Biblioteca'),
+            'settings'  => $settings,
+            'auth_user' => $authUser,
+            'users'     => $users,
+            'resources' => $resources,
+            'loan_hours' => $loanHours,
+            'csrf'      => (string) Session::get('_csrf_token', ''),
+            'old'       => [],
+            'errors'    => [],
+        ], 'layouts/panel'));
     }
 
     public function store(Request $request): Response
     {
-        Session::flash('info', 'La creación manual de préstamos estará disponible próximamente.');
+        $authUser = $this->resolveAuthUser();
+        if ($authUser === null) {
+            Session::destroy();
+            return Response::redirect(BASE_URL . '/login');
+        }
+
+        // CSRF
+        $csrf = (string) $request->post('_csrf_token', '');
+        if (!hash_equals((string) Session::get('_csrf_token', ''), $csrf)) {
+            Session::flash('error', 'Token de seguridad inválido. Intenta de nuevo.');
+            return Response::redirect(BASE_URL . '/admin/loans/create');
+        }
+
+        $userId     = (int) $request->post('user_id', 0);
+        $resourceId = (int) $request->post('resource_id', 0);
+        $notes      = trim((string) $request->post('notes', ''));
+
+        $errors = [];
+        if ($userId <= 0)     { $errors[] = 'Debes seleccionar un usuario.'; }
+        if ($resourceId <= 0) { $errors[] = 'Debes seleccionar un recurso.'; }
+
+        if (!empty($errors)) {
+            Session::flash('error', implode(' ', $errors));
+            return Response::redirect(BASE_URL . '/admin/loans/create');
+        }
+
+        // Load settings
+        $settingsMap = $this->db->query(
+            "SELECT `key`, value FROM system_settings
+             WHERE `key` IN ('loan_hours','max_loans_per_user','block_loans_with_fines','max_renewals')"
+        )->fetchAll(\PDO::FETCH_KEY_PAIR);
+
+        $loanHours      = max(1, (int) ($settingsMap['loan_hours'] ?? 72));
+        $maxLoans       = max(1, (int) ($settingsMap['max_loans_per_user'] ?? 3));
+        $blockWithFines = ((string) ($settingsMap['block_loans_with_fines'] ?? 'true')) === 'true';
+
+        // Validate user exists and is active
+        $userStmt = $this->db->prepare(
+            "SELECT id, name, email, status FROM users WHERE id = ? LIMIT 1"
+        );
+        $userStmt->execute([$userId]);
+        $user = $userStmt->fetch();
+
+        if (!$user || (string) ($user['status'] ?? '') !== 'active') {
+            Session::flash('error', 'El usuario no existe o no está activo.');
+            return Response::redirect(BASE_URL . '/admin/loans/create');
+        }
+
+        // Validate resource exists, is physical, and has copies available
+        $resStmt = $this->db->prepare(
+            "SELECT id, title, authors, available_copies, branch_id
+             FROM resources
+             WHERE id = ? AND type = 'physical' AND is_active = 1 LIMIT 1"
+        );
+        $resStmt->execute([$resourceId]);
+        $resource = $resStmt->fetch();
+
+        if (!$resource) {
+            Session::flash('error', 'El recurso no existe, no es físico o no está activo.');
+            return Response::redirect(BASE_URL . '/admin/loans/create');
+        }
+
+        if ((int) ($resource['available_copies'] ?? 0) <= 0) {
+            Session::flash('error', 'El recurso no tiene copias disponibles.');
+            return Response::redirect(BASE_URL . '/admin/loans/create');
+        }
+
+        // Validate user has no active overdue loans
+        $overdueStmt = $this->db->prepare(
+            "SELECT COUNT(*) FROM loans
+             WHERE user_id = ? AND status IN ('overdue')"
+        );
+        $overdueStmt->execute([$userId]);
+        if ((int) $overdueStmt->fetchColumn() > 0) {
+            Session::flash('error', 'El usuario tiene préstamos vencidos sin devolver. Debe regularizarlos antes de un nuevo préstamo.');
+            return Response::redirect(BASE_URL . '/admin/loans/create');
+        }
+
+        // Validate concurrent loan limit
+        $activeStmt = $this->db->prepare(
+            "SELECT COUNT(*) FROM loans WHERE user_id = ? AND status IN ('active', 'overdue')"
+        );
+        $activeStmt->execute([$userId]);
+        if ((int) $activeStmt->fetchColumn() >= $maxLoans) {
+            Session::flash('error', 'El usuario ya tiene ' . $maxLoans . ' préstamos activos (límite del sistema).');
+            return Response::redirect(BASE_URL . '/admin/loans/create');
+        }
+
+        // Validate no pending fines if blocking is enabled
+        if ($blockWithFines) {
+            $finesStmt = $this->db->prepare(
+                "SELECT COALESCE(SUM(amount - amount_paid), 0) FROM fines
+                 WHERE user_id = ? AND status = 'pending'"
+            );
+            $finesStmt->execute([$userId]);
+            $deuda = (float) $finesStmt->fetchColumn();
+            if ($deuda > 0) {
+                Session::flash('error', sprintf('El usuario tiene multas pendientes por $%.2f. Debe saldarlas antes de un nuevo préstamo.', $deuda));
+                return Response::redirect(BASE_URL . '/admin/loans/create');
+            }
+        }
+
+        // Create loan atomically
+        $this->db->beginTransaction();
+        try {
+            $insertStmt = $this->db->prepare(
+                "INSERT INTO loans
+                 (resource_id, user_id, librarian_id, branch_id, loan_at, due_at, loan_hours_applied, renewals_count, status, notes, created_at)
+                 VALUES (?, ?, ?, ?, NOW(), DATE_ADD(NOW(), INTERVAL ? HOUR), ?, 0, 'active', ?, NOW())"
+            );
+            $insertStmt->execute([
+                $resourceId,
+                $userId,
+                (int) $authUser['id'],
+                $resource['branch_id'] ?? null,
+                $loanHours,
+                $loanHours,
+                $notes !== '' ? $notes : null,
+            ]);
+            $newLoanId = (int) $this->db->lastInsertId();
+
+            $this->db->prepare(
+                "UPDATE resources SET available_copies = available_copies - 1 WHERE id = ? AND available_copies > 0"
+            )->execute([$resourceId]);
+
+            // Audit log
+            $this->db->prepare(
+                "INSERT INTO audit_logs (user_id, action, table_name, record_id, description, created_at)
+                 VALUES (?, 'create', 'loans', ?, ?, NOW())"
+            )->execute([
+                (int) $authUser['id'],
+                $newLoanId,
+                sprintf('Préstamo manual creado para usuario #%d (%s), recurso #%d (%s), vence en %d horas.',
+                    $userId, $user['name'], $resourceId, $resource['title'], $loanHours),
+            ]);
+
+            $this->db->commit();
+        } catch (\Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
+
+        // Enqueue confirmation email
+        try {
+            $loanRow = $this->db->prepare(
+                "SELECT l.id, l.loan_at, l.due_at, u.name, u.email,
+                        b.title AS resource_title
+                 FROM loans l
+                 JOIN users u ON u.id = l.user_id
+                 JOIN resources b ON b.id = l.resource_id
+                 WHERE l.id = ?"
+            );
+            $loanRow->execute([$newLoanId]);
+            $loanData = $loanRow->fetch();
+            if ($loanData && trim((string) ($loanData['email'] ?? '')) !== '') {
+                $mailQueue = new \Services\MailQueueService();
+                $name    = htmlspecialchars((string) $loanData['name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+                $title   = htmlspecialchars((string) $loanData['resource_title'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+                $dueAt   = htmlspecialchars((string) $loanData['due_at'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+                $bodyHtml = "<p>Hola {$name},</p><p>Tu préstamo de <strong>{$title}</strong> ha sido registrado correctamente.</p><p>Fecha de devolución: <strong>{$dueAt}</strong>.</p><p>Por favor devuelve el recurso antes del vencimiento para evitar multas.</p>";
+                $bodyText = "Hola {$name}, tu préstamo de \"{$loanData['resource_title']}\" fue registrado. Devuelve antes del {$loanData['due_at']}.";
+                $mailQueue->enqueue(
+                    (string) $loanData['email'],
+                    (string) $loanData['name'],
+                    sprintf('[Préstamo #%d] Confirmación de préstamo: %s', $newLoanId, $loanData['resource_title']),
+                    $bodyHtml,
+                    $bodyText
+                );
+            }
+        } catch (\Throwable) {
+            // Mail failure is non-blocking
+        }
+
+        Session::flash('success', 'Préstamo registrado correctamente.');
         return Response::redirect(BASE_URL . '/admin/loans');
     }
 

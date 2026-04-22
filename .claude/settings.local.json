@@ -60,7 +60,14 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1/admin/users)",
       "Bash(curl:*)",
       "Bash(grep:*)",
-      "Bash(composer require:*)"
+      "Bash(composer require:*)",
+      "Bash(tee /tmp/covers_log2.txt)",
+      "Bash(echo \"PID: $!\")",
+      "Bash(tee /tmp/covers_log3.txt)",
+      "Bash(chown -R www-data:www-data /var/www/html/public/uploads/)",
+      "Bash(chmod -R 775 /var/www/html/public/uploads/)",
+      "Bash(apache2ctl graceful *)",
+      "Bash(wc -l /var/www/html/views/admin/reports/*.php)"
     ]
   }
 }

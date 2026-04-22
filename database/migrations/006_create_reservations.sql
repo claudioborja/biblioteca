@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS reservations (
     updated_at      DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
     PRIMARY KEY (id),
-    CONSTRAINT fk_reservations_resource FOREIGN KEY (book_id) REFERENCES resources (id) ON UPDATE CASCADE ON DELETE RESTRICT,
+    CONSTRAINT fk_reservations_resource FOREIGN KEY (resource_id) REFERENCES resources (id) ON UPDATE CASCADE ON DELETE RESTRICT,
     CONSTRAINT fk_reservations_user FOREIGN KEY (user_id) REFERENCES users (id) ON UPDATE CASCADE ON DELETE RESTRICT,
     INDEX idx_reservations_resource_queue (resource_id, queue_position, status),
     INDEX idx_reservations_user (user_id, status)

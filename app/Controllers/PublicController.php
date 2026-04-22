@@ -84,25 +84,11 @@ final class PublicController
         // RF-PUB-06 — Estadísticas públicas (cacheables)
         $stats = $this->getPublicStats();
 
-        // Contador de visitas a la página principal (file-based, atómico)
-        $visitsFile = dirname(__DIR__, 2) . '/storage/visits.count';
-        $visits = 0;
-        if (is_writable($visitsFile) || (is_writable(dirname($visitsFile)) && !file_exists($visitsFile))) {
-            $fp = @fopen($visitsFile, 'c+');
-            if ($fp) {
-                flock($fp, LOCK_EX);
-                $current = (int) stream_get_contents($fp);
-                $visits = $current + 1;
-                ftruncate($fp, 0);
-                rewind($fp);
-                fwrite($fp, (string) $visits);
-                flock($fp, LOCK_UN);
-                fclose($fp);
-            }
-        } elseif (file_exists($visitsFile)) {
-            $visits = (int) file_get_contents($visitsFile);
-        }
-        $stats['total_visits'] = $visits;
+        // ── Registro de visita en BD (única por visitante/día) ──────────────────
+        $this->recordVisit($request);
+        $stats['total_visits'] = (int) $this->db
+            ->query("SELECT COUNT(*) FROM visits_log")
+            ->fetchColumn();
 
         // Sedes (si hay múltiples)
         $branches = $this->db->query("
@@ -731,5 +717,68 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         return $stats;
+    }
+
+    /**
+     * Registra una visita a la página principal.
+     * Regla: un mismo visitante solo cuenta una vez por día natural.
+     * Identificador: user_id para autenticados, IP para anónimos.
+     */
+    private function recordVisit(Request $request): void
+    {
+        try {
+            $userId = null;
+            $sessionUserId = (int) Session::get('auth.user_id', 0);
+            if ($sessionUserId > 0) {
+                $userId = $sessionUserId;
+            }
+
+            $ip        = $this->resolveIp($request);
+            $userAgent = substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 500);
+            $referer   = substr((string) ($_SERVER['HTTP_REFERER'] ?? ''), 0, 500);
+            $page      = '/';
+            $today     = date('Y-m-d');
+
+            // Verificar si ya existe una visita hoy para este visitante
+            if ($userId !== null) {
+                $check = $this->db->prepare(
+                    "SELECT COUNT(*) FROM visits_log
+                     WHERE user_id = ? AND DATE(created_at) = ?"
+                );
+                $check->execute([$userId, $today]);
+            } else {
+                $check = $this->db->prepare(
+                    "SELECT COUNT(*) FROM visits_log
+                     WHERE user_id IS NULL AND ip_address = ? AND DATE(created_at) = ?"
+                );
+                $check->execute([$ip, $today]);
+            }
+
+            if ((int) $check->fetchColumn() > 0) {
+                return; // Ya contó hoy
+            }
+
+            $this->db->prepare(
+                "INSERT INTO visits_log (user_id, page, ip_address, user_agent, referer, created_at)
+                 VALUES (?, ?, ?, ?, ?, NOW())"
+            )->execute([$userId, $page, $ip, $userAgent ?: null, $referer ?: null]);
+        } catch (\Throwable) {
+            // No interrumpir la carga de la página si falla el registro
+        }
+    }
+
+    private function resolveIp(Request $request): ?string
+    {
+        foreach (['HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'REMOTE_ADDR'] as $key) {
+            $val = $_SERVER[$key] ?? '';
+            if ($val !== '') {
+                // X-Forwarded-For puede ser una lista; tomar la primera
+                $ip = trim(explode(',', $val)[0]);
+                if (filter_var($ip, FILTER_VALIDATE_IP)) {
+                    return substr($ip, 0, 45);
+                }
+            }
+        }
+        return null;
     }
 }

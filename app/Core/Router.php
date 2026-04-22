@@ -67,10 +67,12 @@ final class Router
     public function dispatch(Request $request): ?array
     {
         $method = $request->method();
+        // HTTP HEAD should be handled by GET routes when no explicit HEAD route exists.
+        $effectiveMethod = $method === 'HEAD' ? 'GET' : $method;
         $uri = $request->path();
 
         foreach ($this->routes as $route) {
-            if ($route['method'] !== $method) {
+            if ($route['method'] !== $effectiveMethod) {
                 continue;
             }
 

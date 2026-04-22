@@ -30,14 +30,13 @@ sort($categories);
 $typeLabels = [
     'book'        => 'Libro',
     'ebook'       => 'Digital',
-    'journal'     => 'Revista',
-    'article'     => 'Artículo',
+    'journal'     => 'Revista / Artículo',
     'thesis'      => 'Tesis',
-    'map'         => 'Mapa',
-    'score'       => 'Partitura',
-    'audiovisual' => 'Audiovisual',
-    'game'        => 'Juego',
-    'kit'         => 'Kit',
+    'map'         => 'Otro',
+    'score'       => 'Otro',
+    'audiovisual' => 'Otro',
+    'game'        => 'Otro',
+    'kit'         => 'Otro',
     'other'       => 'Otro',
 ];
 ?>

@@ -26,14 +26,18 @@ final class AdminController extends BaseController
         }
 
         $settings = $this->panelSettings();
+
+        // ── Recursos ──────────────────────────────────────────────────────────
         $totalResources = (int) $this->db->query('SELECT COUNT(*) FROM resources')->fetchColumn();
-        $totalTypes = (int) $this->db->query('SELECT COUNT(DISTINCT support_type) FROM resources')->fetchColumn();
+        $totalTypes     = (int) $this->db->query("SELECT COUNT(DISTINCT COALESCE(NULLIF(support_type, ''), 'other')) FROM resources")->fetchColumn();
         $resourcesByType = $this->db->query(
             "SELECT COALESCE(NULLIF(r.support_type, ''), 'other') AS resource_type, COUNT(*) AS resources_count
              FROM resources r
-             GROUP BY resource_type
+             GROUP BY COALESCE(NULLIF(r.support_type, ''), 'other')
              ORDER BY resources_count DESC, resource_type ASC"
         )->fetchAll();
+
+        // ── Usuarios ──────────────────────────────────────────────────────────
         $userStats = $this->db->query(
             "SELECT
                 COUNT(*) AS total_users,
@@ -45,14 +49,94 @@ final class AdminController extends BaseController
              WHERE role <> 'admin'"
         )->fetch() ?: [];
 
+        // ── Préstamos ─────────────────────────────────────────────────────────
+        $loanStats = $this->db->query(
+            "SELECT
+                COUNT(*) AS total_loans,
+                SUM(CASE WHEN status = 'active'  THEN 1 ELSE 0 END) AS active_loans,
+                SUM(CASE WHEN status = 'overdue' THEN 1 ELSE 0 END) AS overdue_loans,
+                SUM(CASE WHEN status = 'returned' AND DATE(returned_at) = CURDATE() THEN 1 ELSE 0 END) AS returned_today
+             FROM loans"
+        )->fetch() ?: [];
+
+        // ── Multas ────────────────────────────────────────────────────────────
+        $fineStats = $this->db->query(
+            "SELECT
+                SUM(CASE WHEN status IN ('pending','partially_paid') THEN amount - amount_paid ELSE 0 END) AS pending_amount,
+                COUNT(CASE WHEN status IN ('pending','partially_paid') THEN 1 END) AS pending_count
+             FROM fines"
+        )->fetch() ?: [];
+
+        // ── Visitas ───────────────────────────────────────────────────────────
+        $visitStats = $this->db->query(
+            "SELECT
+                COUNT(*) AS total_visits,
+                SUM(CASE WHEN created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 1 ELSE 0 END) AS visits_30d,
+                SUM(CASE WHEN DATE(created_at) = CURDATE() THEN 1 ELSE 0 END) AS visits_today,
+                COUNT(DISTINCT COALESCE(CAST(user_id AS CHAR), ip_address)) AS unique_visitors
+             FROM visits_log"
+        )->fetch() ?: [];
+
+        // ── Gráfico visitas: últimos 14 días ──────────────────────────────────
+        $visitsChart = $this->db->query(
+            "SELECT DATE(created_at) AS day, COUNT(*) AS n
+             FROM visits_log
+             WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 13 DAY)
+             GROUP BY DATE(created_at)
+             ORDER BY day ASC"
+        )->fetchAll();
+
+        // Rellenar días sin visitas
+        $visitsChartFull = [];
+        for ($i = 13; $i >= 0; $i--) {
+            $day = date('Y-m-d', strtotime("-{$i} days"));
+            $visitsChartFull[$day] = 0;
+        }
+        foreach ($visitsChart as $row) {
+            $visitsChartFull[(string)$row['day']] = (int)$row['n'];
+        }
+
+        // ── Gráfico préstamos: últimos 14 días ────────────────────────────────
+        $loansChart = $this->db->query(
+            "SELECT DATE(loan_at) AS day, COUNT(*) AS n
+             FROM loans
+             WHERE loan_at >= DATE_SUB(CURDATE(), INTERVAL 13 DAY)
+             GROUP BY DATE(loan_at)
+             ORDER BY day ASC"
+        )->fetchAll();
+        $loansChartFull = [];
+        for ($i = 13; $i >= 0; $i--) {
+            $day = date('Y-m-d', strtotime("-{$i} days"));
+            $loansChartFull[$day] = 0;
+        }
+        foreach ($loansChart as $row) {
+            $loansChartFull[(string)$row['day']] = (int)$row['n'];
+        }
+
+        // ── Préstamos recientes (actividad) ───────────────────────────────────
+        $recentLoans = $this->db->query(
+            "SELECT u.name AS user_name, r.title AS resource_title, l.loan_at, l.due_at, l.status
+             FROM loans l
+             JOIN users u     ON u.id = l.user_id
+             JOIN resources r ON r.id = l.resource_id
+             ORDER BY l.loan_at DESC
+             LIMIT 6"
+        )->fetchAll();
+
         return Response::html($this->view->render('admin/dashboard', [
-            'title' => 'Dashboard - ' . ($settings['library_name'] ?? 'Biblioteca'),
-            'settings' => $settings,
-            'auth_user' => $authUser,
+            'title'           => 'Dashboard - ' . ($settings['library_name'] ?? 'Biblioteca'),
+            'settings'        => $settings,
+            'auth_user'       => $authUser,
             'total_resources' => $totalResources,
-            'total_types' => $totalTypes,
+            'total_types'     => $totalTypes,
             'resources_by_type' => $resourcesByType,
-            'user_stats' => $userStats,
+            'user_stats'      => $userStats,
+            'loan_stats'      => $loanStats,
+            'fine_stats'      => $fineStats,
+            'visit_stats'     => $visitStats,
+            'visits_chart'    => $visitsChartFull,
+            'loans_chart'     => $loansChartFull,
+            'recent_loans'    => $recentLoans,
         ], 'layouts/panel'));
     }
 
@@ -397,9 +481,23 @@ final class AdminController extends BaseController
         ], 'layouts/panel'));
     }
 
+    private function normalizeCategoryName(string $name): string
+    {
+        // Convert to Title Case preserving UTF-8 (Spanish accents, ñ, etc.)
+        $words = explode(' ', mb_strtolower($name, 'UTF-8'));
+        $small = ['de', 'del', 'la', 'las', 'los', 'el', 'y', 'e', 'o', 'u', 'a', 'en', 'por', 'con'];
+        foreach ($words as $i => &$word) {
+            if ($i === 0 || !in_array($word, $small, true)) {
+                $word = mb_strtoupper(mb_substr($word, 0, 1, 'UTF-8'), 'UTF-8')
+                      . mb_substr($word, 1, null, 'UTF-8');
+            }
+        }
+        return implode(' ', $words);
+    }
+
     public function storeCategory(Request $request): Response
     {
-        $name = trim((string) $request->post('name', ''));
+        $name = $this->normalizeCategoryName(trim((string) $request->post('name', '')));
         $description = trim((string) $request->post('description', ''));
         if ($name === '') {
             Session::flash('error', 'El nombre de la categoria es obligatorio.');
@@ -429,7 +527,7 @@ final class AdminController extends BaseController
             return Response::redirect(BASE_URL . '/admin/categories');
         }
 
-        $name = trim((string) $request->post('name', ''));
+        $name = $this->normalizeCategoryName(trim((string) $request->post('name', '')));
         $description = trim((string) $request->post('description', ''));
         if ($name === '') {
             Session::flash('error', 'El nombre de la categoria es obligatorio.');

@@ -12,13 +12,13 @@ CREATE TABLE IF NOT EXISTS reading_assignments (
 
     PRIMARY KEY (id),
     INDEX idx_reading_assignments_group (group_id),
-    INDEX idx_reading_assignments_resource resource_id),
+    INDEX idx_reading_assignments_resource (resource_id),
     INDEX idx_reading_assignments_due (due_date),
 
     CONSTRAINT fk_reading_assignments_group
         FOREIGN KEY (group_id) REFERENCES teacher_groups(id)
         ON DELETE CASCADE,
     CONSTRAINT fk_reading_assignments_resource
-        FOREIGN KEY resource_id) REFERENCES resources(id)
+        FOREIGN KEY (resource_id) REFERENCES resources(id)
         ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

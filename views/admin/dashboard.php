@@ -232,7 +232,7 @@ $csrfToken = (string) \Core\Session::get('_csrf_token', '');
                         <a href="<?= BASE_URL ?>/admin/reports/loans/export/pdf"
                            class="flex items-center gap-2 px-3 py-2 text-xs text-on-surface hover:bg-surface-container-low">
                             <?= Icons::download('h-4 w-4 text-red-600') ?>
-                            Descargar reporte (incluye el gráfico)
+                            Descargar reporte
                         </a>
                     </div>
                 </div>
@@ -575,14 +575,18 @@ $csrfToken = (string) \Core\Session::get('_csrf_token', '');
 
     // ── Gráfico préstamos ─────────────────────────────────────────────────
     new Chart(document.getElementById('chart-loans'), {
-        type: 'bar',
+        type: 'line',
         data: {
             labels: <?= json_encode(array_values($loansLabels)) ?>,
             datasets: [{
                 data: <?= json_encode($loansData) ?>,
-                backgroundColor: 'rgba(59,130,246,0.75)',
-                borderRadius: 5,
-                borderSkipped: false,
+                borderColor: '#3b82f6',
+                backgroundColor: 'rgba(59,130,246,0.12)',
+                borderWidth: 2,
+                pointRadius: 3,
+                pointBackgroundColor: '#3b82f6',
+                fill: true,
+                tension: 0.4,
             }]
         },
         options: {
@@ -609,12 +613,7 @@ $csrfToken = (string) \Core\Session::get('_csrf_token', '');
                 data: typesData,
                 backgroundColor: <?= json_encode(array_map(fn($t) => $typeColors[strtolower(trim((string)($t['resource_type'] ?? 'other')))]['bg'] ?? '#6b7280', $types)) ?>,
                 borderWidth: 0,
-                borderRadius: 6,
-                datalabels: {
-                    display: true,
-                    anchor: 'end',
-                    align: 'end',
-                }
+                borderRadius: 6
             }]
         },
         options: {
@@ -623,14 +622,14 @@ $csrfToken = (string) \Core\Session::get('_csrf_token', '');
             maintainAspectRatio: false,
             plugins: {
                 legend: { display: false },
-                tooltip: { backgroundColor:'#1e293b', titleColor:'#f1f5f9', bodyColor:'#cbd5e1', cornerRadius:8, padding:10, displayColors:false },
+                tooltip: { enabled: false },
                 datalabels: {
                     display: true,
-                    anchor: 'end',
-                    align: 'end',
-                    offset: 5,
-                    font: { size: 11, weight: 'bold' },
-                    color: '#1e293b',
+                    anchor: 'center',
+                    align: 'center',
+                    offset: 0,
+                    font: { size: 13, weight: 'bold' },
+                    color: '#ffffff',
                     formatter: (value, context) => value + ' (' + typesPercentages[context.dataIndex] + '%)',
                 }
             },

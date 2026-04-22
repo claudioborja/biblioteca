@@ -12,6 +12,7 @@ $e = fn(mixed $v) => htmlspecialchars((string) $v, ENT_QUOTES | ENT_SUBSTITUTE, 
 $stats        = is_array($queue_stats ?? null) ? $queue_stats : [];
 $items        = is_array($queue_items ?? null) ? $queue_items : [];
 $cronOk       = (bool) ($cron_configured ?? false);
+$cronRaw      = trim((string) ($cron_output ?? ''));
 $execOk       = (bool) ($exec_available ?? false);
 $csrfToken    = (string) ($csrf_token ?? '');
 $workerCmd    = 'php ' . BASE_PATH . '/bin/mail_worker.php';
@@ -32,6 +33,21 @@ $statusLabel = static function (string $status): string {
         'pending' => 'Pendiente',
         default   => ucfirst($status),
     };
+};
+$attemptTone = static function (int $attempts, string $status): string {
+    if ($status === 'failed') {
+        return $attempts >= 3
+            ? 'bg-red-100 text-red-700 border border-red-200'
+            : 'bg-rose-100 text-rose-700 border border-rose-200';
+    }
+
+    if ($status === 'pending') {
+        return $attempts > 0
+            ? 'bg-amber-100 text-amber-700 border border-amber-200'
+            : 'bg-slate-100 text-slate-700 border border-slate-200';
+    }
+
+    return 'bg-emerald-100 text-emerald-700 border border-emerald-200';
 };
 ?>
 
@@ -70,24 +86,29 @@ $statusLabel = static function (string $status): string {
                 <p class="mt-1 text-xs text-amber-700">
                     Los correos en cola no se enviarán automáticamente. Debes configurar un cron o ejecutar el worker manualmente.
                 </p>
-                <div class="mt-3 space-y-2">
-                    <p class="text-xs font-semibold text-amber-800">Cómo configurarlo:</p>
-                    <p class="text-xs text-amber-700">1. Abre la terminal del servidor y ejecuta <code class="rounded bg-amber-100 px-1 font-mono">crontab -e</code></p>
-                    <p class="text-xs text-amber-700">2. Agrega esta línea al final:</p>
-                    <div class="mt-1 flex items-center gap-2 rounded-xl border border-amber-200 bg-white px-3 py-2">
-                        <code id="cron-entry-text" class="flex-1 font-mono text-xs text-slate-700 break-all"><?= $e($cronEntry) ?></code>
-                        <button type="button" id="btn-copy-cron"
-                                class="shrink-0 rounded-lg border border-outline-variant p-1.5 text-on-surface-muted hover:bg-surface-container transition-colors"
-                                title="Copiar">
-                            <i data-lucide="copy" class="h-3.5 w-3.5"></i>
-                        </button>
+                <details class="mt-3 rounded-xl border border-amber-200 bg-white">
+                    <summary class="flex cursor-pointer items-center gap-2 px-3 py-2 text-xs font-semibold text-amber-800">
+                        <i data-lucide="info" class="h-4 w-4"></i>
+                        Ver guía de configuración
+                    </summary>
+                    <div class="space-y-2 border-t border-amber-100 px-3 py-3">
+                        <p class="text-xs text-amber-700">1. Abre la terminal del servidor y ejecuta <code class="rounded bg-amber-100 px-1 font-mono">crontab -e</code></p>
+                        <p class="text-xs text-amber-700">2. Agrega esta línea al final:</p>
+                        <div class="mt-1 flex items-center gap-2 rounded-xl border border-amber-200 bg-white px-3 py-2">
+                            <code id="cron-entry-text" class="flex-1 font-mono text-xs text-slate-700 break-all"><?= $e($cronEntry) ?></code>
+                            <button type="button" id="btn-copy-cron"
+                                    class="shrink-0 rounded-lg border border-outline-variant p-1.5 text-on-surface-muted hover:bg-surface-container transition-colors"
+                                    title="Copiar">
+                                <i data-lucide="copy" class="h-3.5 w-3.5"></i>
+                            </button>
+                        </div>
+                        <p class="text-xs text-amber-700">3. Guarda y sal del editor. El worker se ejecutará cada 5 minutos.</p>
+                        <p class="text-xs text-amber-700">
+                            También puedes ejecutar el worker una vez manualmente:
+                            <code class="rounded bg-amber-100 px-1 font-mono"><?= $e($workerCmd) ?></code>
+                        </p>
                     </div>
-                    <p class="text-xs text-amber-700">3. Guarda y sal del editor. El worker se ejecutará cada 5 minutos.</p>
-                    <p class="text-xs text-amber-700">
-                        También puedes ejecutar el worker una vez manualmente:
-                        <code class="rounded bg-amber-100 px-1 font-mono"><?= $e($workerCmd) ?></code>
-                    </p>
-                </div>
+                </details>
             </div>
         </div>
     </div>
@@ -146,16 +167,92 @@ $statusLabel = static function (string $status): string {
 
     <!-- Queue table -->
     <div class="overflow-hidden rounded-2xl border border-outline-variant/60 bg-white shadow-ambient">
-        <div class="flex items-center justify-between border-b border-outline-variant/50 px-4 py-3">
-            <h2 class="flex items-center gap-2 text-sm font-semibold text-on-surface">
-                <i data-lucide="list" class="h-4 w-4 text-primary"></i>
-                Últimos 60 correos
-            </h2>
-            <button type="button" onclick="window.location.reload()"
-                    class="flex items-center gap-1.5 rounded-lg border border-outline-variant px-2.5 py-1 text-xs font-semibold text-on-surface-muted hover:bg-surface-container transition-colors">
-                <i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>
-                Actualizar
-            </button>
+        <div class="border-b border-outline-variant/50 px-4 py-3.5">
+            <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                    <h2 class="flex items-center gap-2 text-sm font-semibold text-on-surface">
+                        <i data-lucide="list" class="h-4 w-4 text-primary"></i>
+                        Últimos 60 correos
+                    </h2>
+                    <p class="mt-1 text-xs text-on-surface-muted">
+                        Filtra por estado, busca por asunto/correo y prioriza errores para depuración.
+                    </p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <button type="button"
+                            class="status-chip rounded-full border border-outline-variant px-3 py-1 text-xs font-semibold text-on-surface hover:bg-surface-container transition-colors"
+                            data-chip-status="all"
+                            aria-pressed="true">
+                        Todos
+                    </button>
+                    <button type="button"
+                            class="status-chip rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100 transition-colors"
+                            data-chip-status="pending"
+                            aria-pressed="false">
+                        Pendientes
+                    </button>
+                    <button type="button"
+                            class="status-chip rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 transition-colors"
+                            data-chip-status="sent"
+                            aria-pressed="false">
+                        Enviados
+                    </button>
+                    <button type="button"
+                            class="status-chip rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors"
+                            data-chip-status="failed"
+                            aria-pressed="false">
+                        Fallidos
+                    </button>
+                </div>
+            </div>
+
+            <div class="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                <label class="relative block">
+                    <span class="sr-only">Buscar en la cola</span>
+                    <i data-lucide="search" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-on-surface-subtle"></i>
+                    <input type="search"
+                           id="queue-search"
+                           placeholder="Buscar por correo, nombre o asunto…"
+                           class="w-full rounded-xl border border-outline-variant bg-white py-2 pl-9 pr-3 text-sm text-on-surface outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20" />
+                </label>
+
+                <label class="relative block">
+                    <span class="sr-only">Filtrar por estado</span>
+                    <select id="queue-status-filter"
+                            class="w-full appearance-none rounded-xl border border-outline-variant bg-white px-3 py-2 pr-8 text-sm text-on-surface outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20">
+                        <option value="all">Todos los estados</option>
+                        <option value="pending">Pendiente</option>
+                        <option value="failed">Fallido</option>
+                        <option value="sent">Enviado</option>
+                    </select>
+                    <i data-lucide="chevron-down" class="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-on-surface-subtle"></i>
+                </label>
+
+                <label class="flex items-center gap-2 rounded-xl border border-outline-variant bg-white px-3 py-2 text-sm text-on-surface">
+                    <input id="queue-errors-only" type="checkbox" class="h-4 w-4 rounded border-outline-variant text-primary focus:ring-primary/30" />
+                    Solo con error
+                </label>
+
+                <div class="flex items-center justify-between rounded-xl border border-outline-variant bg-surface-container-low px-3 py-2 text-xs">
+                    <span id="queue-filter-summary" class="font-semibold text-on-surface">Mostrando 0 de 0</span>
+                    <button type="button"
+                            id="queue-reset-filters"
+                            class="rounded-lg border border-outline-variant bg-white px-2 py-1 font-semibold text-on-surface-muted hover:bg-surface-container transition-colors">
+                        Limpiar
+                    </button>
+                </div>
+            </div>
+
+            <div class="mt-2 flex items-center justify-between">
+                <p class="text-[11px] text-on-surface-subtle">
+                    Actualizado: <span id="queue-updated-at">justo ahora</span>
+                </p>
+                <button type="button" onclick="window.location.reload()"
+                        class="flex items-center gap-1.5 rounded-lg border border-outline-variant px-2.5 py-1 text-xs font-semibold text-on-surface-muted hover:bg-surface-container transition-colors">
+                    <i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>
+                    Actualizar
+                </button>
+            </div>
         </div>
 
         <?php if (empty($items)): ?>
@@ -169,41 +266,52 @@ $statusLabel = static function (string $status): string {
             <table class="min-w-full text-left text-sm">
                 <thead class="bg-surface-container-low text-xs uppercase tracking-wide text-on-surface-subtle">
                     <tr>
-                        <th class="whitespace-nowrap px-4 py-3 font-semibold">#</th>
-                        <th class="whitespace-nowrap px-4 py-3 font-semibold">Destinatario</th>
-                        <th class="whitespace-nowrap px-4 py-3 font-semibold">Asunto</th>
-                        <th class="whitespace-nowrap px-4 py-3 font-semibold">Estado</th>
-                        <th class="whitespace-nowrap px-4 py-3 font-semibold">Intentos</th>
-                        <th class="whitespace-nowrap px-4 py-3 font-semibold">Programado</th>
-                        <th class="whitespace-nowrap px-4 py-3 font-semibold">Restante</th>
-                        <th class="whitespace-nowrap px-4 py-3 font-semibold">Enviado</th>
-                        <th class="whitespace-nowrap px-4 py-3 font-semibold">Error</th>
-                        <th class="whitespace-nowrap px-4 py-3 font-semibold">Acción</th>
+                        <th scope="col" class="whitespace-nowrap px-4 py-3 font-semibold">#</th>
+                        <th scope="col" class="whitespace-nowrap px-4 py-3 font-semibold">Destinatario</th>
+                        <th scope="col" class="whitespace-nowrap px-4 py-3 font-semibold">Asunto</th>
+                        <th scope="col" class="whitespace-nowrap px-4 py-3 font-semibold">Estado</th>
+                        <th scope="col" class="whitespace-nowrap px-4 py-3 font-semibold">Intentos</th>
+                        <th scope="col" class="whitespace-nowrap px-4 py-3 font-semibold">Programado</th>
+                        <th scope="col" class="whitespace-nowrap px-4 py-3 font-semibold">Restante</th>
+                        <th scope="col" class="whitespace-nowrap px-4 py-3 font-semibold">Enviado</th>
+                        <th scope="col" class="whitespace-nowrap px-4 py-3 font-semibold">Error</th>
+                        <th scope="col" class="whitespace-nowrap px-4 py-3 font-semibold">Acción</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-outline-variant/40" id="queue-tbody">
                     <?php foreach ($items as $item):
                         $status  = (string) ($item['status'] ?? '');
                         $itemId  = (int) ($item['id'] ?? 0);
+                        $toName  = (string) ($item['to_name'] ?? '');
+                        $toEmail = (string) ($item['to_email'] ?? '');
+                        $subject = (string) ($item['subject'] ?? '');
                         $errMsg  = trim((string) ($item['error_message'] ?? ''));
+                        $attempts = (int) ($item['attempts'] ?? 0);
                         $scheduledTs = strtotime((string) ($item['scheduled_at'] ?? ''));
+                        $searchText = mb_strtolower(trim($toName . ' ' . $toEmail . ' ' . $subject . ' ' . $errMsg));
                     ?>
-                    <tr class="hover:bg-surface-container/40 transition-colors" id="row-<?= $itemId ?>">
+                    <tr class="hover:bg-surface-container/40 transition-colors"
+                        id="row-<?= $itemId ?>"
+                        data-row-status="<?= $e($status) ?>"
+                        data-row-has-error="<?= $errMsg !== '' ? '1' : '0' ?>"
+                        data-row-search="<?= $e($searchText) ?>">
                         <td class="px-4 py-3 font-mono text-xs text-on-surface-muted"><?= $itemId ?></td>
                         <td class="px-4 py-3">
-                            <p class="text-xs font-semibold text-on-surface"><?= $e($item['to_name'] ?? '') ?></p>
-                            <p class="text-[11px] text-on-surface-muted"><?= $e($item['to_email'] ?? '') ?></p>
+                            <p class="text-xs font-semibold text-on-surface"><?= $e($toName) ?></p>
+                            <p class="text-[11px] text-on-surface-muted"><?= $e($toEmail) ?></p>
                         </td>
-                        <td class="max-w-[200px] px-4 py-3 text-xs text-on-surface truncate" title="<?= $e($item['subject'] ?? '') ?>">
-                            <?= $e(mb_strimwidth((string) ($item['subject'] ?? ''), 0, 55, '…')) ?>
+                        <td class="max-w-[200px] px-4 py-3 text-xs text-on-surface truncate" title="<?= $e($subject) ?>">
+                            <?= $e(mb_strimwidth($subject, 0, 55, '…')) ?>
                         </td>
                         <td class="px-4 py-3">
                             <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold <?= $statusBadge($status) ?>">
                                 <?= $statusLabel($status) ?>
                             </span>
                         </td>
-                        <td class="px-4 py-3 text-center text-xs font-semibold text-on-surface-muted">
-                            <?= (int) ($item['attempts'] ?? 0) ?>
+                        <td class="px-4 py-3 text-center">
+                            <span class="inline-flex min-w-9 items-center justify-center rounded-full px-2 py-0.5 text-xs font-semibold <?= $attemptTone($attempts, $status) ?>">
+                                <?= $attempts ?>
+                            </span>
                         </td>
                         <td class="whitespace-nowrap px-4 py-3 text-[11px] text-on-surface-muted">
                             <?= $e($item['scheduled_at'] ?? '—') ?>
@@ -220,10 +328,14 @@ $statusLabel = static function (string $status): string {
                         </td>
                         <td class="max-w-[180px] px-4 py-3">
                             <?php if ($errMsg !== ''): ?>
-                            <span class="inline-block max-w-[180px] truncate text-[11px] text-red-600"
-                                  title="<?= $e($errMsg) ?>">
-                                <?= $e(mb_strimwidth($errMsg, 0, 60, '…')) ?>
-                            </span>
+                            <details class="group max-w-[200px]">
+                                <summary class="cursor-pointer list-none text-[11px] font-semibold text-red-600 hover:text-red-700">
+                                    <?= $e(mb_strimwidth($errMsg, 0, 60, '…')) ?>
+                                </summary>
+                                <p class="mt-1 rounded-lg border border-red-200 bg-red-50 p-2 text-[11px] text-red-700 break-words">
+                                    <?= $e($errMsg) ?>
+                                </p>
+                            </details>
                             <?php else: ?>
                             <span class="text-[11px] text-on-surface-subtle">—</span>
                             <?php endif; ?>
@@ -287,6 +399,18 @@ $statusLabel = static function (string $status): string {
             </div>
         </div>
     </div>
+    <?php if ($cronRaw !== ''): ?>
+    <div class="mt-5 rounded-2xl border border-outline-variant/60 bg-white p-5 shadow-ambient">
+        <h3 class="mb-2 flex items-center gap-2 text-sm font-semibold text-on-surface">
+            <i data-lucide="clipboard-list" class="h-4 w-4 text-primary"></i>
+            Crontab detectado para este usuario
+        </h3>
+        <p class="mb-2 text-xs text-on-surface-subtle">
+            Salida parcial de <code class="rounded bg-surface-container px-1 font-mono">crontab -l</code> para verificar que exista la tarea del worker.
+        </p>
+        <pre class="max-h-48 overflow-auto rounded-xl border border-outline-variant bg-surface-container-low p-3 text-[11px] text-on-surface-muted"><?= $e($cronRaw) ?></pre>
+    </div>
+    <?php endif; ?>
 
 </section>
 
@@ -297,6 +421,15 @@ $statusLabel = static function (string $status): string {
     const ACTION  = `${window.location.origin}${actionPath}`;
 
     const toast   = document.getElementById('worker-toast');
+    const tbody   = document.getElementById('queue-tbody');
+    const rows    = tbody ? Array.from(tbody.querySelectorAll('tr[id^="row-"]')) : [];
+    const statusFilter = document.getElementById('queue-status-filter');
+    const searchInput = document.getElementById('queue-search');
+    const errorsOnly = document.getElementById('queue-errors-only');
+    const summary = document.getElementById('queue-filter-summary');
+    const resetFilters = document.getElementById('queue-reset-filters');
+    const updatedAt = document.getElementById('queue-updated-at');
+    const statusChips = Array.from(document.querySelectorAll('.status-chip'));
 
     function showToast(msg, ok) {
         if (!toast) return;
@@ -325,6 +458,58 @@ $statusLabel = static function (string $status): string {
             if (data.ok) setTimeout(() => window.location.reload(), 1800);
         } catch (err) {
             showToast('Error de red: ' + err.message, false);
+        }
+    }
+
+    function formatUpdatedAt() {
+        if (!updatedAt) return;
+        updatedAt.textContent = new Date().toLocaleString('es-EC', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+        });
+    }
+
+    function setActiveChip(value) {
+        statusChips.forEach((chip) => {
+            const active = chip.dataset.chipStatus === value;
+            chip.setAttribute('aria-pressed', active ? 'true' : 'false');
+            chip.classList.toggle('ring-2', active);
+            chip.classList.toggle('ring-primary/30', active);
+        });
+    }
+
+    function normalizeText(value) {
+        return (value || '').toString().toLowerCase().trim();
+    }
+
+    function applyFilters() {
+        if (!rows.length) return;
+
+        const q = normalizeText(searchInput?.value || '');
+        const status = normalizeText(statusFilter?.value || 'all');
+        const onlyErrors = Boolean(errorsOnly?.checked);
+
+        let visible = 0;
+        rows.forEach((row) => {
+            const rowStatus = normalizeText(row.dataset.rowStatus || '');
+            const rowSearch = normalizeText(row.dataset.rowSearch || '');
+            const rowHasError = row.dataset.rowHasError === '1';
+
+            const okStatus = status === 'all' || rowStatus === status;
+            const okError = !onlyErrors || rowHasError;
+            const okSearch = q === '' || rowSearch.includes(q);
+            const show = okStatus && okError && okSearch;
+
+            row.classList.toggle('hidden', !show);
+            if (show) visible++;
+        });
+
+        if (summary) {
+            summary.textContent = `Mostrando ${visible} de ${rows.length}`;
         }
     }
 
@@ -418,5 +603,36 @@ $statusLabel = static function (string $status): string {
     if (remainingEls.length > 0) {
         setInterval(refreshRemaining, 1000);
     }
+
+    if (searchInput) searchInput.addEventListener('input', applyFilters);
+    if (statusFilter) {
+        statusFilter.addEventListener('change', () => {
+            setActiveChip(statusFilter.value || 'all');
+            applyFilters();
+        });
+    }
+    if (errorsOnly) errorsOnly.addEventListener('change', applyFilters);
+    if (resetFilters) {
+        resetFilters.addEventListener('click', () => {
+            if (searchInput) searchInput.value = '';
+            if (statusFilter) statusFilter.value = 'all';
+            if (errorsOnly) errorsOnly.checked = false;
+            setActiveChip('all');
+            applyFilters();
+        });
+    }
+
+    statusChips.forEach((chip) => {
+        chip.addEventListener('click', () => {
+            const value = chip.dataset.chipStatus || 'all';
+            if (statusFilter) statusFilter.value = value;
+            setActiveChip(value);
+            applyFilters();
+        });
+    });
+
+    formatUpdatedAt();
+    setActiveChip('all');
+    applyFilters();
 })();
 </script>

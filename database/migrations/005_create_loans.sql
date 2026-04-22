@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS loans (
     created_at          DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     PRIMARY KEY (id),
-    CONSTRAINT fk_loans_resource FOREIGN KEY (book_id) REFERENCES resources (id) ON UPDATE CASCADE ON DELETE RESTRICT,
+    CONSTRAINT fk_loans_resource FOREIGN KEY (resource_id) REFERENCES resources (id) ON UPDATE CASCADE ON DELETE RESTRICT,
     CONSTRAINT fk_loans_user FOREIGN KEY (user_id) REFERENCES users (id) ON UPDATE CASCADE ON DELETE RESTRICT,
     CONSTRAINT fk_loans_librarian FOREIGN KEY (librarian_id) REFERENCES users (id) ON UPDATE CASCADE ON DELETE SET NULL,
     CONSTRAINT fk_loans_branch FOREIGN KEY (branch_id) REFERENCES library_branches (id) ON UPDATE CASCADE ON DELETE SET NULL,

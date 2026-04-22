@@ -58,16 +58,10 @@ $e = fn(mixed $v) => htmlspecialchars((string) $v, ENT_QUOTES | ENT_SUBSTITUTE, 
                         <div>
                             <label for="resource_type" class="label-sm">Tipo de recurso</label>
                             <select id="resource_type" name="resource_type" class="mt-1 w-full rounded-xl border border-outline-variant bg-surface-container-lowest px-3 py-2.5 text-sm focus:border-primary focus:outline-none">
-                                <option value="book" <?= ($old['resource_type'] ?? 'book') === 'book' ? 'selected' : '' ?>>Libro</option>
-                                <option value="ebook" <?= ($old['resource_type'] ?? '') === 'ebook' ? 'selected' : '' ?>>Libro electrónico</option>
-                                <option value="journal" <?= ($old['resource_type'] ?? '') === 'journal' ? 'selected' : '' ?>>Revista / publicación seriada</option>
-                                <option value="article" <?= ($old['resource_type'] ?? '') === 'article' ? 'selected' : '' ?>>Artículo</option>
+                                <option value="book" <?= ($old['resource_type'] ?? 'book') === 'book' ? 'selected' : '' ?>>Libro físico</option>
+                                <option value="ebook" <?= ($old['resource_type'] ?? '') === 'ebook' ? 'selected' : '' ?>>Libro digital</option>
+                                <option value="journal" <?= ($old['resource_type'] ?? '') === 'journal' ? 'selected' : '' ?>>Revista / Artículo</option>
                                 <option value="thesis" <?= ($old['resource_type'] ?? '') === 'thesis' ? 'selected' : '' ?>>Tesis</option>
-                                <option value="map" <?= ($old['resource_type'] ?? '') === 'map' ? 'selected' : '' ?>>Mapa</option>
-                                <option value="score" <?= ($old['resource_type'] ?? '') === 'score' ? 'selected' : '' ?>>Partitura</option>
-                                <option value="audiovisual" <?= ($old['resource_type'] ?? '') === 'audiovisual' ? 'selected' : '' ?>>Audiovisual</option>
-                                <option value="game" <?= ($old['resource_type'] ?? '') === 'game' ? 'selected' : '' ?>>Juego</option>
-                                <option value="kit" <?= ($old['resource_type'] ?? '') === 'kit' ? 'selected' : '' ?>>Kit</option>
                                 <option value="other" <?= ($old['resource_type'] ?? '') === 'other' ? 'selected' : '' ?>>Otro</option>
                             </select>
                         </div>
@@ -216,6 +210,7 @@ $e = fn(mixed $v) => htmlspecialchars((string) $v, ENT_QUOTES | ENT_SUBSTITUTE, 
                             <input id="cover_image" name="cover_image" type="file" accept="image/jpeg,image/png,image/webp,image/gif"
                                    class="mt-1 w-full rounded-xl border border-outline-variant bg-surface-container-lowest px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-primary hover:file:bg-primary/20 focus:border-primary focus:outline-none">
                             <p class="mt-1 text-xs text-on-surface-muted">Máx. 5 MB · JPG, PNG, WEBP, GIF</p>
+                            <p id="cover-error-create" class="mt-1 hidden text-xs font-semibold text-red-600"></p>
                             <div id="cover-preview-create" class="mt-2 hidden">
                                 <img id="cover-preview-img-create" src="" alt="Vista previa" class="h-28 w-20 rounded-xl border border-outline-variant object-cover">
                             </div>
@@ -290,21 +285,13 @@ $e = fn(mixed $v) => htmlspecialchars((string) $v, ENT_QUOTES | ENT_SUBSTITUTE, 
 
 <script>
 (() => {
-    // Cover image preview
-    const coverInput = document.getElementById('cover_image');
-    const previewWrap = document.getElementById('cover-preview-create');
-    const previewImg  = document.getElementById('cover-preview-img-create');
-    if (coverInput && previewWrap && previewImg) {
-        coverInput.addEventListener('change', () => {
-            const file = coverInput.files?.[0];
-            if (file) {
-                previewImg.src = URL.createObjectURL(file);
-                previewWrap.classList.remove('hidden');
-            } else {
-                previewWrap.classList.add('hidden');
-            }
-        });
-    }
+    window.initCoverImageInput?.({
+        inputEl:     document.getElementById('cover_image'),
+        previewWrap: document.getElementById('cover-preview-create'),
+        previewImg:  document.getElementById('cover-preview-img-create'),
+        errorEl:     document.getElementById('cover-error-create'),
+        maxMB: 5,
+    });
 })();
 
 (() => {

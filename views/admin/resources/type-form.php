@@ -182,6 +182,7 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
                         <input type="file" name="cover_image" accept="image/jpeg,image/png,image/webp,image/gif"
                                class="mt-1 w-full rounded-xl border border-outline-variant bg-surface-container-lowest px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-primary hover:file:bg-primary/20 focus:border-primary focus:outline-none">
                         <p class="mt-1 text-xs text-on-surface-muted"><?= $is_edit ? 'Dejar vacío para conservar. ' : '' ?>Máx. 5 MB · JPG, PNG, WEBP, GIF</p>
+                        <p id="cover-error-type" class="mt-1 hidden text-xs font-semibold text-red-600"></p>
                         <div id="cover-preview-type" class="mt-2 hidden">
                             <img id="cover-preview-img-type" src="" alt="Vista previa" class="h-28 w-20 rounded-xl border border-outline-variant object-cover">
                         </div>
@@ -316,21 +317,13 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
 
 <script>
 (() => {
-    // Cover image preview
-    const coverInput = document.querySelector('input[name="cover_image"][type="file"]');
-    const previewWrap = document.getElementById('cover-preview-type');
-    const previewImg  = document.getElementById('cover-preview-img-type');
-    if (coverInput && previewWrap && previewImg) {
-        coverInput.addEventListener('change', () => {
-            const file = coverInput.files?.[0];
-            if (file) {
-                previewImg.src = URL.createObjectURL(file);
-                previewWrap.classList.remove('hidden');
-            } else {
-                previewWrap.classList.add('hidden');
-            }
-        });
-    }
+    window.initCoverImageInput?.({
+        inputEl:     document.querySelector('input[name="cover_image"][type="file"]'),
+        previewWrap: document.getElementById('cover-preview-type'),
+        previewImg:  document.getElementById('cover-preview-img-type'),
+        errorEl:     document.getElementById('cover-error-type'),
+        maxMB: 5,
+    });
 })();
 
 (() => {

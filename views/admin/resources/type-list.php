@@ -13,17 +13,11 @@ sort($filterCategories);
 
 // All type links for the top subnav
 $allTypes = [
-    'libros'        => 'Libros',
-    'digitales'     => 'Digitales',
-    'revistas'      => 'Revistas',
-    'articulos'     => 'Artículos',
-    'tesis'         => 'Tesis',
-    'mapas'         => 'Mapas',
-    'partituras'    => 'Partituras',
-    'audiovisuales' => 'Audiovisuales',
-    'juegos'        => 'Juegos',
-    'kits'          => 'Kits',
-    'otros'         => 'Otros',
+    'libros'    => 'Libros físicos',
+    'digitales' => 'Libros digitales',
+    'revistas'  => 'Revistas / Artículos',
+    'tesis'     => 'Tesis',
+    'otros'     => 'Otros',
 ];
 
 // Wizard steps
@@ -333,7 +327,7 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
                 </div>
 
                 <!-- Wizard form -->
-                <form method="POST" action="<?= BASE_URL ?>/admin/resources/type/<?= $e($slug) ?>" id="type-wizard-form" class="flex flex-1 flex-col overflow-hidden">
+                <form method="POST" action="<?= BASE_URL ?>/admin/resources/type/<?= $e($slug) ?>" id="type-wizard-form" enctype="multipart/form-data" class="flex flex-1 flex-col overflow-hidden">
                     <input type="hidden" name="_csrf_token" value="<?= $e(\Core\Session::get('_csrf_token', '')) ?>">
 
                     <div class="flex-1 overflow-y-auto px-5 py-5">
@@ -430,8 +424,16 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
                             </div>
                             <?php if ($cfg['show_cover']): ?>
                             <div>
-                                <label class="label-sm">URL de portada / imagen</label>
-                                <input type="url" name="cover_image" class="<?= $inputClass ?>" placeholder="https://...">
+                                <label class="label-sm">Imagen de portada</label>
+                                <input id="type-cover-input" name="cover_image" type="file"
+                                       accept="image/jpeg,image/png,image/webp,image/gif"
+                                       class="mt-1 w-full rounded-xl border border-outline-variant bg-surface-container-lowest px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-primary hover:file:bg-primary/20 focus:border-primary focus:outline-none">
+                                <p class="mt-1 text-xs text-on-surface-muted">Máx. 5 MB · JPG, PNG, WEBP, GIF</p>
+                                <p id="type-cover-error" class="mt-1 hidden text-xs font-semibold text-red-600"></p>
+                                <div id="type-cover-preview" class="mt-2 hidden">
+                                    <img id="type-cover-preview-img" src="" alt="Vista previa"
+                                         class="h-28 w-20 rounded-xl border border-outline-variant object-cover">
+                                </div>
                             </div>
                             <?php endif; ?>
                         </div>
@@ -750,6 +752,9 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
         if (!wizardModal) return;
         wizardStep = 0;
         wizardForm?.reset();
+        // Reset cover preview
+        if (typeCoverPreview) typeCoverPreview.classList.add('hidden');
+        if (typeCoverImg) typeCoverImg.src = '';
         updateWizardUI();
         wizardModal.classList.remove('hidden');
         wizardModal.setAttribute('aria-hidden', 'false');
@@ -780,6 +785,18 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
 
     document.addEventListener('keydown', e => {
         if (e.key === 'Escape' && wizardModal && !wizardModal.classList.contains('hidden')) closeWizard();
+    });
+
+    // Cover image preview
+    const typeCoverInput   = document.getElementById('type-cover-input');
+    const typeCoverPreview = document.getElementById('type-cover-preview');
+    const typeCoverImg     = document.getElementById('type-cover-preview-img');
+    window.initCoverImageInput?.({
+        inputEl:     typeCoverInput,
+        previewWrap: typeCoverPreview,
+        previewImg:  typeCoverImg,
+        errorEl:     document.getElementById('type-cover-error'),
+        maxMB: 5,
     });
 })();
 </script>

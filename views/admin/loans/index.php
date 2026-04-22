@@ -39,9 +39,10 @@ $visibleLoans = $loans;
             <button type="button" class="rounded-xl border border-outline-variant bg-white px-4 py-2 text-sm font-semibold text-on-surface-muted opacity-70 cursor-not-allowed">
                 Exportar
             </button>
-            <button type="button" class="rounded-xl gradient-scholar px-4 py-2 text-sm font-semibold text-white shadow-ambient opacity-85 cursor-not-allowed">
-                Nuevo prestamo
-            </button>
+            <a href="<?= BASE_URL ?>/admin/loans/create"
+               class="rounded-xl gradient-scholar px-4 py-2 text-sm font-semibold text-white shadow-ambient hover:opacity-90 transition-opacity inline-flex items-center gap-2">
+                <?= Icons::plus('w-4 h-4') ?> Nuevo préstamo
+            </a>
         </div>
     </div>
 

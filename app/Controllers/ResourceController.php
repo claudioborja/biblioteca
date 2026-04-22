@@ -14,8 +14,8 @@ use Services\PdfService;
 final class ResourceController extends BaseController
 {
     private PdfService $pdfService;
-    private const RESOURCE_TYPES = ['book', 'ebook', 'journal', 'article', 'thesis', 'map', 'score', 'audiovisual', 'game', 'kit', 'other'];
-    private const BOOK_TYPES = ['physical', 'digital', 'audiovisual', 'journal', 'thesis', 'map', 'score', 'kit', 'game', 'other'];
+    private const RESOURCE_TYPES = ['book', 'ebook', 'journal', 'thesis', 'other'];
+    private const BOOK_TYPES = ['physical', 'digital', 'journal', 'thesis', 'other'];
     private ?array $resourcesTableColumns = null;
 
     public function __construct()
@@ -1175,13 +1175,7 @@ final class ResourceController extends BaseController
             'libros'         => 'book',
             'digitales'      => 'ebook',
             'revistas'       => 'journal',
-            'articulos'      => 'article',
             'tesis'          => 'thesis',
-            'mapas'          => 'map',
-            'partituras'     => 'score',
-            'audiovisuales'  => 'audiovisual',
-            'juegos'         => 'game',
-            'kits'           => 'kit',
             'otros'          => 'other',
             default          => null,
         };
@@ -1243,29 +1237,16 @@ final class ResourceController extends BaseController
             ]),
             'journal' => array_merge($base, [
                 'slug'                     => 'revistas',
-                'label'                    => 'Revista',
-                'label_plural'             => 'Revistas',
+                'label'                    => 'Revista / Artículo',
+                'label_plural'             => 'Revistas y artículos',
                 'support_type'             => 'journal',
-                'show_authors'             => false,
-                'publisher_label'          => 'Casa publicadora',
-                'replacement_cost_required'=> true,
-            ]),
-            'article' => array_merge($base, [
-                'slug'                     => 'articulos',
-                'label'                    => 'Artículo',
-                'label_plural'             => 'Artículos',
-                'support_type'             => 'digital',
-                'authors_required'         => true,
-                'publisher_label'          => 'Publicado en (revista / congreso)',
+                'show_authors'             => true,
+                'authors_label'            => 'Autor(es)',
+                'authors_required'         => false,
+                'publisher_label'          => 'Casa publicadora / Congreso',
                 'show_digital_url'         => true,
                 'digital_url_required'     => false,
-                'show_inventory'           => false,
-                'copies_required'          => false,
-                'show_replacement_cost'    => false,
                 'replacement_cost_required'=> false,
-                'show_cover'               => false,
-                'show_location'            => false,
-                'show_branch'              => false,
             ]),
             'thesis' => array_merge($base, [
                 'slug'                     => 'tesis',
@@ -1277,53 +1258,6 @@ final class ResourceController extends BaseController
                 'publisher_label'          => 'Institución educativa',
                 'show_replacement_cost'    => false,
                 'replacement_cost_required'=> false,
-            ]),
-            'map' => array_merge($base, [
-                'slug'                     => 'mapas',
-                'label'                    => 'Mapa',
-                'label_plural'             => 'Mapas',
-                'support_type'             => 'map',
-                'authors_label'            => 'Autor / Cartógrafo',
-                'publisher_label'          => 'Editorial / Institución',
-                'replacement_cost_required'=> true,
-            ]),
-            'score' => array_merge($base, [
-                'slug'                     => 'partituras',
-                'label'                    => 'Partitura',
-                'label_plural'             => 'Partituras',
-                'support_type'             => 'score',
-                'authors_label'            => 'Compositor / Arreglista',
-                'authors_required'         => true,
-                'publisher_label'          => 'Editorial musical',
-                'show_cover'               => false,
-                'replacement_cost_required'=> true,
-            ]),
-            'audiovisual' => array_merge($base, [
-                'slug'                     => 'audiovisuales',
-                'label'                    => 'Audiovisual',
-                'label_plural'             => 'Audiovisuales',
-                'support_type'             => 'audiovisual',
-                'authors_label'            => 'Director / Creador',
-                'publisher_label'          => 'Productora / Distribuidora',
-                'show_digital_url'         => true,
-                'replacement_cost_required'=> true,
-            ]),
-            'game' => array_merge($base, [
-                'slug'                     => 'juegos',
-                'label'                    => 'Juego',
-                'label_plural'             => 'Juegos',
-                'support_type'             => 'game',
-                'authors_label'            => 'Diseñador / Creador',
-                'replacement_cost_required'=> true,
-            ]),
-            'kit' => array_merge($base, [
-                'slug'                     => 'kits',
-                'label'                    => 'Kit',
-                'label_plural'             => 'Kits',
-                'support_type'             => 'kit',
-                'show_authors'             => false,
-                'publisher_label'          => 'Fabricante / Proveedor',
-                'replacement_cost_required'=> true,
             ]),
             'other' => array_merge($base, [
                 'slug'                     => 'otros',
@@ -2004,6 +1938,84 @@ final class ResourceController extends BaseController
         }
 
         return null;
+    }
+
+    public function deactivate(Request $request, string $id = ''): Response
+    {
+        $authUser = $this->resolveAuthUser();
+        if ($authUser === null) {
+            Session::destroy();
+            return Response::redirect(BASE_URL . '/login');
+        }
+
+        if (!hash_equals(Session::get('_csrf_token', ''), $request->post('_csrf_token', ''))) {
+            Session::flash('error', 'Token de seguridad inválido.');
+            return Response::redirect(BASE_URL . '/admin/resources');
+        }
+
+        $resourceId = (int) $id;
+        if ($resourceId <= 0) {
+            Session::flash('error', 'Recurso inválido.');
+            return Response::redirect(BASE_URL . '/admin/resources');
+        }
+
+        $stmt = $this->db->prepare('SELECT id, title FROM resources WHERE id = ? LIMIT 1');
+        $stmt->execute([$resourceId]);
+        $resource = $stmt->fetch();
+
+        if (!$resource) {
+            Session::flash('error', 'No se encontró el recurso.');
+            return Response::redirect(BASE_URL . '/admin/resources');
+        }
+
+        $this->db->prepare('UPDATE resources SET is_active = 0, updated_at = NOW() WHERE id = ?')->execute([$resourceId]);
+
+        $this->db->prepare(
+            "INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details, created_at)
+             VALUES (?, 'resource.deactivate', 'resource', ?, ?, NOW())"
+        )->execute([$authUser['id'], $resourceId, json_encode(['title' => $resource['title']])]);
+
+        Session::flash('success', 'Recurso desactivado correctamente.');
+        return Response::redirect(BASE_URL . '/admin/resources');
+    }
+
+    public function reactivate(Request $request, string $id = ''): Response
+    {
+        $authUser = $this->resolveAuthUser();
+        if ($authUser === null) {
+            Session::destroy();
+            return Response::redirect(BASE_URL . '/login');
+        }
+
+        if (!hash_equals(Session::get('_csrf_token', ''), $request->post('_csrf_token', ''))) {
+            Session::flash('error', 'Token de seguridad inválido.');
+            return Response::redirect(BASE_URL . '/admin/resources');
+        }
+
+        $resourceId = (int) $id;
+        if ($resourceId <= 0) {
+            Session::flash('error', 'Recurso inválido.');
+            return Response::redirect(BASE_URL . '/admin/resources');
+        }
+
+        $stmt = $this->db->prepare('SELECT id, title FROM resources WHERE id = ? LIMIT 1');
+        $stmt->execute([$resourceId]);
+        $resource = $stmt->fetch();
+
+        if (!$resource) {
+            Session::flash('error', 'No se encontró el recurso.');
+            return Response::redirect(BASE_URL . '/admin/resources');
+        }
+
+        $this->db->prepare('UPDATE resources SET is_active = 1, updated_at = NOW() WHERE id = ?')->execute([$resourceId]);
+
+        $this->db->prepare(
+            "INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details, created_at)
+             VALUES (?, 'resource.reactivate', 'resource', ?, ?, NOW())"
+        )->execute([$authUser['id'], $resourceId, json_encode(['title' => $resource['title']])]);
+
+        Session::flash('success', 'Recurso reactivado correctamente.');
+        return Response::redirect(BASE_URL . '/admin/resources');
     }
 
     private function storeCoverImage(array $file): ?string

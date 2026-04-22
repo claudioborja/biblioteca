@@ -142,6 +142,388 @@ final class TeacherController
         ], 'layouts/panel'));
     }
 
+    public function groups(Request $request): Response
+    {
+        $authUser = $this->resolveAuthUser();
+        if ($authUser === null) {
+            Session::destroy();
+            return Response::redirect(BASE_URL . '/login');
+        }
+
+        $teacherId = (int) $authUser['id'];
+        $settings  = $this->panelSettings();
+
+        $stmt = $this->db->prepare(
+            'SELECT
+                tg.id,
+                tg.name,
+                tg.description,
+                tg.school_year,
+                tg.is_active,
+                tg.created_at,
+                COUNT(DISTINCT tgs.student_id) AS students_count,
+                COUNT(DISTINCT ra.id) AS assignments_count
+             FROM teacher_groups tg
+             LEFT JOIN teacher_group_students tgs ON tgs.group_id = tg.id
+             LEFT JOIN reading_assignments ra ON ra.group_id = tg.id AND ra.is_active = 1
+             WHERE tg.teacher_id = ?
+             GROUP BY tg.id, tg.name, tg.description, tg.school_year, tg.is_active, tg.created_at
+             ORDER BY tg.is_active DESC, tg.created_at DESC'
+        );
+        $stmt->execute([$teacherId]);
+        $groups = $stmt->fetchAll();
+
+        return Response::html($this->view->render('teacher/groups/index', [
+            'title'     => 'Mis grupos - ' . ($settings['library_name'] ?? 'Biblioteca'),
+            'settings'  => $settings,
+            'auth_user' => $authUser,
+            'groups'    => $groups,
+        ], 'layouts/panel'));
+    }
+
+    public function createGroup(Request $request): Response
+    {
+        $authUser = $this->resolveAuthUser();
+        if ($authUser === null) {
+            Session::destroy();
+            return Response::redirect(BASE_URL . '/login');
+        }
+
+        $settings = $this->panelSettings();
+        $old = Session::getFlash('group_form_old', [
+            'name' => '', 'description' => '', 'school_year' => '',
+        ]);
+
+        return Response::html($this->view->render('teacher/groups/create', [
+            'title'     => 'Nuevo grupo - ' . ($settings['library_name'] ?? 'Biblioteca'),
+            'settings'  => $settings,
+            'auth_user' => $authUser,
+            'old'       => $old,
+            'csrf'      => Session::get('_csrf_token', ''),
+        ], 'layouts/panel'));
+    }
+
+    public function storeGroup(Request $request): Response
+    {
+        $authUser = $this->resolveAuthUser();
+        if ($authUser === null) {
+            Session::destroy();
+            return Response::redirect(BASE_URL . '/login');
+        }
+
+        if (!hash_equals(Session::get('_csrf_token', ''), $request->post('_csrf_token', ''))) {
+            Session::flash('error', 'Token de seguridad inválido.');
+            return Response::redirect(BASE_URL . '/teacher/groups/create');
+        }
+
+        $teacherId   = (int) $authUser['id'];
+        $name        = trim((string) $request->post('name', ''));
+        $description = trim((string) $request->post('description', ''));
+        $schoolYear  = trim((string) $request->post('school_year', ''));
+
+        $errors = [];
+        if (mb_strlen($name) < 3) {
+            $errors[] = 'El nombre del grupo debe tener al menos 3 caracteres.';
+        }
+        if ($schoolYear === '') {
+            $errors[] = 'El año escolar es obligatorio.';
+        }
+
+        if ($errors !== []) {
+            Session::flash('error', implode(' ', $errors));
+            Session::flash('group_form_old', compact('name', 'description', 'schoolYear'));
+            return Response::redirect(BASE_URL . '/teacher/groups/create');
+        }
+
+        $this->db->prepare(
+            'INSERT INTO teacher_groups (teacher_id, name, description, school_year, is_active, created_at, updated_at)
+             VALUES (?, ?, ?, ?, 1, NOW(), NOW())'
+        )->execute([$teacherId, $name, $description !== '' ? $description : null, $schoolYear]);
+
+        $groupId = (int) $this->db->lastInsertId();
+
+        Session::flash('success', 'Grupo creado correctamente.');
+        return Response::redirect(BASE_URL . '/teacher/groups/' . $groupId);
+    }
+
+    public function editGroup(Request $request, string $id): Response
+    {
+        $authUser = $this->resolveAuthUser();
+        if ($authUser === null) {
+            Session::destroy();
+            return Response::redirect(BASE_URL . '/login');
+        }
+
+        $teacherId = (int) $authUser['id'];
+        $groupId   = (int) $id;
+        $settings  = $this->panelSettings();
+
+        $stmt = $this->db->prepare('SELECT * FROM teacher_groups WHERE id = ? AND teacher_id = ? LIMIT 1');
+        $stmt->execute([$groupId, $teacherId]);
+        $group = $stmt->fetch();
+
+        if (!$group) {
+            Session::flash('error', 'Grupo no encontrado.');
+            return Response::redirect(BASE_URL . '/teacher/groups');
+        }
+
+        $old = Session::getFlash('group_form_old', [
+            'name'        => $group['name'],
+            'description' => $group['description'] ?? '',
+            'school_year' => $group['school_year'],
+        ]);
+
+        return Response::html($this->view->render('teacher/groups/edit', [
+            'title'     => 'Editar grupo - ' . ($settings['library_name'] ?? 'Biblioteca'),
+            'settings'  => $settings,
+            'auth_user' => $authUser,
+            'group'     => $group,
+            'old'       => $old,
+            'csrf'      => Session::get('_csrf_token', ''),
+        ], 'layouts/panel'));
+    }
+
+    public function updateGroup(Request $request, string $id): Response
+    {
+        $authUser = $this->resolveAuthUser();
+        if ($authUser === null) {
+            Session::destroy();
+            return Response::redirect(BASE_URL . '/login');
+        }
+
+        if (!hash_equals(Session::get('_csrf_token', ''), $request->post('_csrf_token', ''))) {
+            Session::flash('error', 'Token de seguridad inválido.');
+            return Response::redirect(BASE_URL . '/teacher/groups');
+        }
+
+        $teacherId   = (int) $authUser['id'];
+        $groupId     = (int) $id;
+        $name        = trim((string) $request->post('name', ''));
+        $description = trim((string) $request->post('description', ''));
+        $schoolYear  = trim((string) $request->post('school_year', ''));
+        $isActive    = $request->post('is_active', '1') === '1' ? 1 : 0;
+
+        $stmt = $this->db->prepare('SELECT id FROM teacher_groups WHERE id = ? AND teacher_id = ? LIMIT 1');
+        $stmt->execute([$groupId, $teacherId]);
+        if (!$stmt->fetch()) {
+            Session::flash('error', 'Grupo no encontrado.');
+            return Response::redirect(BASE_URL . '/teacher/groups');
+        }
+
+        $errors = [];
+        if (mb_strlen($name) < 3) {
+            $errors[] = 'El nombre del grupo debe tener al menos 3 caracteres.';
+        }
+        if ($schoolYear === '') {
+            $errors[] = 'El año escolar es obligatorio.';
+        }
+
+        if ($errors !== []) {
+            Session::flash('error', implode(' ', $errors));
+            Session::flash('group_form_old', compact('name', 'description', 'schoolYear'));
+            return Response::redirect(BASE_URL . '/teacher/groups/' . $groupId . '/edit');
+        }
+
+        $this->db->prepare(
+            'UPDATE teacher_groups SET name = ?, description = ?, school_year = ?, is_active = ?, updated_at = NOW()
+             WHERE id = ? AND teacher_id = ?'
+        )->execute([$name, $description !== '' ? $description : null, $schoolYear, $isActive, $groupId, $teacherId]);
+
+        Session::flash('success', 'Grupo actualizado correctamente.');
+        return Response::redirect(BASE_URL . '/teacher/groups/' . $groupId);
+    }
+
+    public function groupActivity(Request $request, string $id): Response
+    {
+        $authUser = $this->resolveAuthUser();
+        if ($authUser === null) {
+            Session::destroy();
+            return Response::redirect(BASE_URL . '/login');
+        }
+
+        $teacherId = (int) $authUser['id'];
+        $groupId   = (int) $id;
+        $settings  = $this->panelSettings();
+
+        $stmt = $this->db->prepare(
+            'SELECT id, name, school_year FROM teacher_groups WHERE id = ? AND teacher_id = ? LIMIT 1'
+        );
+        $stmt->execute([$groupId, $teacherId]);
+        $group = $stmt->fetch();
+
+        if (!$group) {
+            Session::flash('error', 'Grupo no encontrado.');
+            return Response::redirect(BASE_URL . '/teacher/groups');
+        }
+
+        $activityStmt = $this->db->prepare(
+            "SELECT
+                u.id AS student_id,
+                u.name AS student_name,
+                r.title AS book_title,
+                l.status,
+                l.loan_at,
+                l.due_at,
+                l.returned_at
+             FROM loans l
+             JOIN teacher_group_students tgs ON tgs.student_id = l.user_id AND tgs.group_id = ?
+             JOIN users u ON u.id = l.user_id
+             JOIN resources r ON r.id = l.resource_id
+             ORDER BY l.loan_at DESC
+             LIMIT 100"
+        );
+        $activityStmt->execute([$groupId]);
+        $activity = $activityStmt->fetchAll();
+
+        return Response::html($this->view->render('teacher/groups/activity', [
+            'title'     => 'Actividad del grupo - ' . ($settings['library_name'] ?? 'Biblioteca'),
+            'settings'  => $settings,
+            'auth_user' => $authUser,
+            'group'     => $group,
+            'activity'  => $activity,
+        ], 'layouts/panel'));
+    }
+
+    public function studentProfile(Request $request, string $id, string $studentId = ''): Response
+    {
+        $authUser = $this->resolveAuthUser();
+        if ($authUser === null) {
+            Session::destroy();
+            return Response::redirect(BASE_URL . '/login');
+        }
+
+        $teacherId = (int) $authUser['id'];
+        $groupId   = (int) $id;
+        $stuId     = (int) $studentId;
+        $settings  = $this->panelSettings();
+
+        $groupStmt = $this->db->prepare(
+            'SELECT id, name FROM teacher_groups WHERE id = ? AND teacher_id = ? LIMIT 1'
+        );
+        $groupStmt->execute([$groupId, $teacherId]);
+        $group = $groupStmt->fetch();
+
+        if (!$group) {
+            Session::flash('error', 'Grupo no encontrado.');
+            return Response::redirect(BASE_URL . '/teacher/groups');
+        }
+
+        // Verify student belongs to this group
+        $memberStmt = $this->db->prepare(
+            'SELECT 1 FROM teacher_group_students WHERE group_id = ? AND student_id = ? LIMIT 1'
+        );
+        $memberStmt->execute([$groupId, $stuId]);
+        if (!$memberStmt->fetch()) {
+            Session::flash('error', 'El alumno no pertenece a este grupo.');
+            return Response::redirect(BASE_URL . '/teacher/groups/' . $groupId);
+        }
+
+        $userStmt = $this->db->prepare('SELECT id, name, email, user_number, status FROM users WHERE id = ? LIMIT 1');
+        $userStmt->execute([$stuId]);
+        $student = $userStmt->fetch();
+
+        if (!$student) {
+            Response::abort(404);
+        }
+
+        $loansStmt = $this->db->prepare(
+            "SELECT l.id, r.title AS book_title, l.status, l.loan_at, l.due_at, l.returned_at
+             FROM loans l
+             JOIN resources r ON r.id = l.resource_id
+             WHERE l.user_id = ?
+             ORDER BY l.loan_at DESC
+             LIMIT 20"
+        );
+        $loansStmt->execute([$stuId]);
+        $loans = $loansStmt->fetchAll();
+
+        $assignmentsStmt = $this->db->prepare(
+            "SELECT ra.title, ra.due_date, r.title AS book_title, ras.status AS progress_status, ras.completed_at
+             FROM reading_assignment_students ras
+             JOIN reading_assignments ra ON ra.id = ras.assignment_id
+             JOIN resources r ON r.id = ra.resource_id
+             WHERE ras.student_id = ? AND ra.group_id = ? AND ra.is_active = 1
+             ORDER BY ra.due_date ASC"
+        );
+        $assignmentsStmt->execute([$stuId, $groupId]);
+        $assignments = $assignmentsStmt->fetchAll();
+
+        return Response::html($this->view->render('teacher/groups/student-profile', [
+            'title'       => $student['name'] . ' - ' . ($settings['library_name'] ?? 'Biblioteca'),
+            'settings'    => $settings,
+            'auth_user'   => $authUser,
+            'group'       => $group,
+            'student'     => $student,
+            'loans'       => $loans,
+            'assignments' => $assignments,
+        ], 'layouts/panel'));
+    }
+
+    public function groupReport(Request $request, string $id): Response
+    {
+        $authUser = $this->resolveAuthUser();
+        if ($authUser === null) {
+            Session::destroy();
+            return Response::redirect(BASE_URL . '/login');
+        }
+
+        $teacherId = (int) $authUser['id'];
+        $groupId   = (int) $id;
+        $settings  = $this->panelSettings();
+
+        $stmt = $this->db->prepare(
+            'SELECT
+                tg.id,
+                tg.name,
+                tg.description,
+                tg.school_year,
+                tg.created_at,
+                COUNT(DISTINCT tgs.student_id) AS students_count,
+                COUNT(DISTINCT ra.id) AS assignments_count
+             FROM teacher_groups tg
+             LEFT JOIN teacher_group_students tgs ON tgs.group_id = tg.id
+             LEFT JOIN reading_assignments ra ON ra.group_id = tg.id AND ra.is_active = 1
+             WHERE tg.id = ? AND tg.teacher_id = ?
+             GROUP BY tg.id, tg.name, tg.description, tg.school_year, tg.created_at
+             LIMIT 1'
+        );
+        $stmt->execute([$groupId, $teacherId]);
+        $group = $stmt->fetch();
+
+        if (!$group) {
+            Session::flash('error', 'Grupo no encontrado.');
+            return Response::redirect(BASE_URL . '/teacher/groups');
+        }
+
+        $studentsStmt = $this->db->prepare(
+            "SELECT
+                u.id,
+                u.name,
+                u.user_number,
+                COUNT(DISTINCT CASE WHEN l.status = 'active' THEN l.id END) AS active_loans,
+                COUNT(DISTINCT CASE WHEN l.status = 'overdue' THEN l.id END) AS overdue_loans,
+                COUNT(DISTINCT CASE WHEN ras.status = 'completed' THEN ras.assignment_id END) AS completed_assignments,
+                COUNT(DISTINCT ras.assignment_id) AS total_assignments
+             FROM teacher_group_students tgs
+             JOIN users u ON u.id = tgs.student_id
+             LEFT JOIN loans l ON l.user_id = u.id
+             LEFT JOIN reading_assignment_students ras ON ras.student_id = u.id
+             WHERE tgs.group_id = ?
+             GROUP BY u.id, u.name, u.user_number
+             ORDER BY u.name ASC"
+        );
+        $studentsStmt->execute([$groupId]);
+        $students = $studentsStmt->fetchAll();
+
+        return Response::html($this->view->render('teacher/groups/report', [
+            'title'     => 'Reporte: ' . $group['name'] . ' - ' . ($settings['library_name'] ?? 'Biblioteca'),
+            'settings'  => $settings,
+            'auth_user' => $authUser,
+            'group'     => $group,
+            'students'  => $students,
+        ], 'layouts/panel'));
+    }
+
     public function showGroup(Request $request, string $id): Response
     {
         $authUser = $this->resolveAuthUser();
