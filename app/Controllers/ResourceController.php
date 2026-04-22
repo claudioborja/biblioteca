@@ -941,7 +941,9 @@ final class ResourceController extends BaseController
             return Response::redirect(BASE_URL . '/login');
         }
 
-        $books = $this->resourcesCatalogData();
+        $typeParam = trim((string) $request->get('type', ''));
+        $type = $this->slugToType($typeParam) ?? (in_array($typeParam, self::RESOURCE_TYPES, true) ? $typeParam : null);
+        $books = $this->resourcesCatalogData($type);
 
         $handle = fopen('php://temp', 'r+');
         fputs($handle, "\xEF\xBB\xBF");
@@ -966,7 +968,8 @@ final class ResourceController extends BaseController
         $csv = stream_get_contents($handle);
         fclose($handle);
 
-        $filename = 'recursos_' . date('Ymd_His') . '.csv';
+        $suffix = $type !== null ? ($this->typeToSlug($type) ?? $type) : 'todos';
+        $filename = 'recursos_' . $suffix . '_' . date('Ymd_His') . '.csv';
 
         return (new Response((string) $csv, 200, [
             'Content-Type' => 'text/csv; charset=UTF-8',
@@ -983,8 +986,11 @@ final class ResourceController extends BaseController
             return Response::redirect(BASE_URL . '/login');
         }
 
-        $books = $this->resourcesCatalogData();
+        $typeParam = trim((string) $request->get('type', ''));
+        $type = $this->slugToType($typeParam) ?? (in_array($typeParam, self::RESOURCE_TYPES, true) ? $typeParam : null);
+        $books = $this->resourcesCatalogData($type);
         $settings = $this->panelSettings();
+        $cfg = $type !== null ? $this->typeConfig($type) : null;
 
         $rows = [];
         foreach ($books as $book) {
@@ -1005,13 +1011,16 @@ final class ResourceController extends BaseController
         $pdf = $this->pdfService->renderSimpleTableReport([
             'library' => (string) ($settings['library_name'] ?? 'Biblioteca'),
             'title' => 'Informe de recursos',
-            'subtitle' => 'Catalogo general de recursos y disponibilidad.',
+            'subtitle' => $cfg !== null
+                ? ('Listado de ' . (string) ($cfg['label_plural'] ?? 'recursos') . ' y disponibilidad.')
+                : 'Catalogo general de recursos y disponibilidad.',
             'headers' => ['Codigo', 'Titulo', 'Autor', 'Categoria', 'Copias', 'Disp', 'Prest', 'Estado'],
             'rows' => $rows,
             'generated_at' => date('d/m/Y H:i'),
         ]);
 
-        $filename = 'informe_recursos_' . date('Ymd_His') . '.pdf';
+        $suffix = $type !== null ? ($this->typeToSlug($type) ?? $type) : 'todos';
+        $filename = 'informe_recursos_' . $suffix . '_' . date('Ymd_His') . '.pdf';
 
         return new Response($pdf, 200, [
             'Content-Type' => 'application/pdf',
@@ -1020,26 +1029,46 @@ final class ResourceController extends BaseController
         ]);
     }
 
-    private function resourcesCatalogData(): array
+    private function resourcesCatalogData(?string $resourceType = null): array
     {
         $hasResourceType = $this->resourcesTableHasColumn('resource_type');
         $resourceTypeSelect = $hasResourceType ? 'b.resource_type' : "'book' AS resource_type";
-
-        $rows = $this->db->query(
-            "SELECT
-                b.id,
-                b.title,
-                b.authors,
-                {$resourceTypeSelect},
-                b.total_copies,
-                b.available_copies,
-                b.is_active,
-                c.name AS category_name
-             FROM resources b
-             LEFT JOIN categories c ON c.id = b.category_id
-             ORDER BY b.created_at DESC, b.id DESC
-             LIMIT 200"
-        )->fetchAll();
+        if ($hasResourceType && $resourceType !== null) {
+            $stmt = $this->db->prepare(
+                "SELECT
+                    b.id,
+                    b.title,
+                    b.authors,
+                    {$resourceTypeSelect},
+                    b.total_copies,
+                    b.available_copies,
+                    b.is_active,
+                    c.name AS category_name
+                 FROM resources b
+                 LEFT JOIN categories c ON c.id = b.category_id
+                 WHERE b.resource_type = :resource_type
+                 ORDER BY b.created_at DESC, b.id DESC
+                 LIMIT 200"
+            );
+            $stmt->execute([':resource_type' => $resourceType]);
+            $rows = $stmt->fetchAll();
+        } else {
+            $rows = $this->db->query(
+                "SELECT
+                    b.id,
+                    b.title,
+                    b.authors,
+                    {$resourceTypeSelect},
+                    b.total_copies,
+                    b.available_copies,
+                    b.is_active,
+                    c.name AS category_name
+                 FROM resources b
+                 LEFT JOIN categories c ON c.id = b.category_id
+                 ORDER BY b.created_at DESC, b.id DESC
+                 LIMIT 200"
+            )->fetchAll();
+        }
 
         return array_map(function (array $book): array {
             $authors = $book['authors'] ?? '';

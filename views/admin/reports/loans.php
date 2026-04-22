@@ -42,12 +42,12 @@ $e = fn(mixed $v) => htmlspecialchars((string) $v, ENT_QUOTES | ENT_SUBSTITUTE, 
         <div class="flex flex-wrap gap-3">
             <a href="<?= BASE_URL ?>/admin/reports/loans/export/excel"
                class="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-ambient transition-colors hover:bg-emerald-700">
-                <?= Icons::download('w-4 h-4') ?>
+                <iconify-icon icon="mdi:file-excel-box"></iconify-icon>
                 Descargar Excel
             </a>
             <a href="<?= BASE_URL ?>/admin/reports/loans/export/pdf"
                class="inline-flex items-center gap-2 rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white shadow-ambient transition-colors hover:bg-red-700">
-                <?= Icons::download('w-4 h-4') ?>
+                <iconify-icon icon="mdi:file-pdf-box"></iconify-icon>
                 Descargar PDF
             </a>
         </div>

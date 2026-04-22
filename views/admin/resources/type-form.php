@@ -195,7 +195,7 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
                         <?php if ($is_edit && $val('digital_url') !== ''): ?>
                         <input type="hidden" name="existing_digital_url" value="<?= $val('digital_url') ?>">
                         <div class="mb-2 flex items-center gap-2 rounded-xl border border-outline-variant bg-surface-container-lowest p-2">
-                            <i class="bi bi-file-earmark-pdf text-red-600"></i>
+                            <iconify-icon icon="mdi:file-pdf-box" class="text-red-600"></iconify-icon>
                             <span class="text-xs text-on-surface-muted truncate"><?= $val('digital_url') ?></span>
                         </div>
                         <?php endif; ?>

@@ -365,6 +365,127 @@ final class ReportController
         return $this->csvResponse($handle, 'multas');
     }
 
+    public function exportFinesExcel(Request $request): Response
+    {
+        if ($this->auth() === null) return $this->redirectLogin();
+
+        $rows = $this->db->query(
+            "SELECT u.name AS usuario, u.user_number,
+                    r.title AS recurso,
+                    f.amount, f.amount_paid,
+                    GREATEST(0, f.amount - f.amount_paid) AS pendiente,
+                    f.status, f.created_at
+             FROM fines f
+             JOIN loans l ON l.id = f.loan_id
+             JOIN users u ON u.id = l.user_id
+             JOIN resources r ON r.id = l.resource_id
+             ORDER BY f.created_at DESC"
+        )->fetchAll();
+
+        $libraryName = $this->libraryName();
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Multas');
+
+        $headerFill = ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['argb' => 'FF1E3A5F']];
+        $headerFont = ['bold' => true, 'color' => ['argb' => 'FFFFFFFF'], 'size' => 10];
+        $borderThin = ['style' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN, 'color' => ['argb' => 'FFD0D8E4']];
+        $allBorders = ['allBorders' => $borderThin];
+
+        $sheet->mergeCells('A1:H1');
+        $sheet->setCellValue('A1', $libraryName . ' · Reporte de multas · ' . date('d/m/Y H:i'));
+        $sheet->getStyle('A1')->applyFromArray([
+            'font' => ['bold' => true, 'size' => 13, 'color' => ['argb' => 'FF1E3A5F']],
+            'alignment' => [
+                'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_LEFT,
+                'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER,
+            ],
+        ]);
+        $sheet->getRowDimension(1)->setRowHeight(28);
+
+        $headers = [
+            'A' => 'Usuario',
+            'B' => 'N° Usuario',
+            'C' => 'Recurso',
+            'D' => 'Monto',
+            'E' => 'Pagado',
+            'F' => 'Pendiente',
+            'G' => 'Estado',
+            'H' => 'Fecha',
+        ];
+        foreach ($headers as $col => $label) {
+            $sheet->setCellValue($col . '2', $label);
+        }
+        $sheet->getStyle('A2:H2')->applyFromArray([
+            'fill' => $headerFill,
+            'font' => $headerFont,
+            'alignment' => [
+                'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
+                'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER,
+            ],
+            'borders' => $allBorders,
+        ]);
+        $sheet->getRowDimension(2)->setRowHeight(20);
+
+        $dataRow = 3;
+        foreach ($rows as $r) {
+            $sheet->setCellValue('A' . $dataRow, (string) ($r['usuario'] ?? ''));
+            $sheet->setCellValue('B' . $dataRow, (string) ($r['user_number'] ?? ''));
+            $sheet->setCellValue('C' . $dataRow, (string) ($r['recurso'] ?? ''));
+            $sheet->setCellValue('D' . $dataRow, number_format((float) ($r['amount'] ?? 0), 2, '.', ''));
+            $sheet->setCellValue('E' . $dataRow, number_format((float) ($r['amount_paid'] ?? 0), 2, '.', ''));
+            $sheet->setCellValue('F' . $dataRow, number_format((float) ($r['pendiente'] ?? 0), 2, '.', ''));
+            $sheet->setCellValue('G' . $dataRow, $this->fineStatusLabel((string) ($r['status'] ?? '')));
+            $sheet->setCellValue('H' . $dataRow, substr((string) ($r['created_at'] ?? ''), 0, 16));
+
+            if ($dataRow % 2 === 0) {
+                $sheet->getStyle('A' . $dataRow . ':H' . $dataRow)->applyFromArray([
+                    'fill' => [
+                        'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                        'startColor' => ['argb' => 'FFF5F7FA'],
+                    ],
+                ]);
+            }
+            $sheet->getStyle('A' . $dataRow . ':H' . $dataRow)->applyFromArray(['borders' => $allBorders]);
+            $dataRow++;
+        }
+
+        foreach ([
+            'A' => 30,
+            'B' => 16,
+            'C' => 44,
+            'D' => 14,
+            'E' => 14,
+            'F' => 14,
+            'G' => 16,
+            'H' => 20,
+        ] as $col => $width) {
+            $sheet->getColumnDimension($col)->setWidth($width);
+        }
+
+        $sheet->freezePane('A3');
+        $lastRow = max($dataRow - 1, 2);
+        $sheet->setAutoFilter('A2:H' . $lastRow);
+
+        $spreadsheet->getProperties()
+            ->setCreator($libraryName)
+            ->setTitle('Reporte de multas')
+            ->setDescription('Generado el ' . date('d/m/Y H:i'));
+
+        $filename = 'multas_' . date('Ymd_His') . '.xlsx';
+        ob_start();
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        $writer->save('php://output');
+        $xlsx = ob_get_clean();
+
+        return new Response((string) $xlsx, 200, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate',
+            'Pragma' => 'no-cache',
+        ]);
+    }
+
     public function exportVisitsCsv(Request $request): Response
     {
         if ($this->auth() === null) return $this->redirectLogin();

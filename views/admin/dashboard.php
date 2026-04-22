@@ -231,7 +231,7 @@ $csrfToken = (string) \Core\Session::get('_csrf_token', '');
                         </a>
                         <a href="<?= BASE_URL ?>/admin/reports/visits/export/pdf"
                            class="flex items-center gap-2 px-3 py-2 text-xs text-on-surface hover:bg-surface-container-low">
-                            <?= Icons::download('h-4 w-4 text-red-600') ?>
+                            <iconify-icon icon="mdi:file-pdf-box" class="h-4 w-4 text-red-600"></iconify-icon>
                             Descargar reporte
                         </a>
                         <button type="button"
@@ -273,7 +273,7 @@ $csrfToken = (string) \Core\Session::get('_csrf_token', '');
                         </a>
                         <a href="<?= BASE_URL ?>/admin/reports/loans/export/pdf"
                            class="flex items-center gap-2 px-3 py-2 text-xs text-on-surface hover:bg-surface-container-low">
-                            <?= Icons::download('h-4 w-4 text-red-600') ?>
+                            <iconify-icon icon="mdi:file-pdf-box" class="h-4 w-4 text-red-600"></iconify-icon>
                             Descargar reporte
                         </a>
                     </div>

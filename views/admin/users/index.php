@@ -55,11 +55,11 @@ $csrfToken = $csrf ?? '';
         <div class="flex items-center gap-2">
             <a href="<?= BASE_URL ?>/admin/users/report/pdf"
                class="inline-flex items-center gap-2 rounded-xl border border-outline-variant bg-white px-4 py-2 text-sm font-semibold text-on-surface-muted hover:bg-surface-container-low transition-colors">
-                <i class="bi bi-file-earmark-pdf text-sm"></i> PDF
+                <iconify-icon icon="mdi:file-pdf-box"></iconify-icon> PDF
             </a>
             <a href="<?= BASE_URL ?>/admin/users/export"
                class="inline-flex items-center gap-2 rounded-xl border border-outline-variant bg-white px-4 py-2 text-sm font-semibold text-on-surface-muted hover:bg-surface-container-low transition-colors">
-                <i class="bi bi-file-earmark-spreadsheet text-sm"></i> Excel
+                <iconify-icon icon="mdi:file-excel-box"></iconify-icon> Excel
             </a>
             <button type="button" id="btn-open-create-modal"
                     class="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-light transition-colors">

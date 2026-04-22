@@ -123,11 +123,14 @@ $fmtDateTime = static fn(?string $date): string => ($date !== null && $date !== 
                 <!-- CTA Buttons -->
                 <div class="flex flex-col gap-2.5 w-full">
                     <?php if ($isDigital && !empty($book['digital_url']) && !empty($auth_user) && !empty($canReadDigital)): ?>
-                        <a href="<?= BASE_URL ?>/account/digital-resources/<?= (int) ($book['id'] ?? 0) ?>/read" target="_blank" rel="noopener"
+                        <a href="<?= BASE_URL ?>/account/loans"
                            class="flex items-center justify-center gap-2 w-full px-5 py-3 gradient-scholar text-on-primary font-semibold rounded-[0.5rem] hover:opacity-90 transition-opacity text-sm">
-                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"/></svg>
-                            Leer PDF
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11.25 4.5l-7.5 7.5 7.5 7.5M4.5 12h15"/></svg>
+                            Ir a mis préstamos para leer
                         </a>
+                        <p class="text-xs text-on-surface-subtle text-center px-1">
+                            Para abrir el libro digital usa la opción de lectura desde tu cuenta.
+                        </p>
                     <?php elseif ($isDigital && !empty($book['digital_url']) && !empty($auth_user)): ?>
                         <form method="POST" action="<?= BASE_URL ?>/account/reservations" class="w-full">
                             <input type="hidden" name="_csrf_token" value="<?= View::e((string) \Core\Session::get('_csrf_token', '')) ?>">

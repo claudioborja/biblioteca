@@ -3,6 +3,18 @@ $_uri = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?? '';
 $_basePath = rtrim(parse_url(BASE_URL, PHP_URL_PATH) ?? '', '/');
 $_uriPath  = '/' . ltrim(substr($_uri, strlen($_basePath)), '/');
 
+$sessionAuthUser = null;
+if (empty($auth_user) && (int) \Core\Session::get('auth.user_id', 0) > 0) {
+    $sessionAuthUser = [
+        'id' => (int) \Core\Session::get('auth.user_id', 0),
+        'name' => (string) \Core\Session::get('auth.name', ''),
+        'email' => (string) \Core\Session::get('auth.email', ''),
+        'role' => (string) \Core\Session::get('auth.role', ''),
+    ];
+}
+
+$headerAuthUser = !empty($auth_user) ? $auth_user : $sessionAuthUser;
+
 $_navActive = static function(string $segment) use ($_uriPath): string {
     $active = $segment === '/'
         ? $_uriPath === '/'
@@ -86,21 +98,21 @@ $_navActive = static function(string $segment) use ($_uriPath): string {
                     </svg>
                 </a>
 
-                <?php if (!empty($auth_user)): ?>
+                <?php if (!empty($headerAuthUser)): ?>
                     <div class="hidden sm:flex items-center gap-1.5 ml-1">
                         <a href="<?= BASE_URL ?>/account"
                            class="flex items-center gap-2 px-2.5 py-1.5 text-sm text-on-surface-muted hover:text-primary rounded-[0.375rem] transition-colors duration-200">
                             <div class="w-7 h-7 rounded-full gradient-scholar text-on-primary flex items-center justify-center text-xs font-bold font-display">
-                                <?= htmlspecialchars(mb_strtoupper(mb_substr($auth_user['name'] ?? '?', 0, 1)), ENT_QUOTES, 'UTF-8') ?>
+                                <?= htmlspecialchars(mb_strtoupper(mb_substr($headerAuthUser['name'] ?? '?', 0, 1)), ENT_QUOTES, 'UTF-8') ?>
                             </div>
-                            <span class="font-medium text-sm hidden xl:block"><?= htmlspecialchars($auth_user['name'] ?? '', ENT_QUOTES, 'UTF-8') ?></span>
+                            <span class="font-medium text-sm hidden xl:block"><?= htmlspecialchars($headerAuthUser['name'] ?? '', ENT_QUOTES, 'UTF-8') ?></span>
                         </a>
-                        <?php if (in_array($auth_user['role'] ?? '', ['admin', 'librarian'])): ?>
+                        <?php if (in_array($headerAuthUser['role'] ?? '', ['admin', 'librarian'], true)): ?>
                             <a href="<?= BASE_URL ?>/admin"
                                class="px-3 py-1.5 text-xs font-semibold text-primary bg-primary/8 hover:bg-primary/14 rounded-[0.375rem] transition-colors duration-200">
                                 Panel
                             </a>
-                        <?php elseif (($auth_user['role'] ?? '') === 'teacher'): ?>
+                        <?php elseif (($headerAuthUser['role'] ?? '') === 'teacher'): ?>
                             <a href="<?= BASE_URL ?>/teacher"
                                class="px-3 py-1.5 text-xs font-semibold text-primary bg-primary/8 hover:bg-primary/14 rounded-[0.375rem] transition-colors duration-200">
                                 Docente
@@ -169,7 +181,7 @@ $_navActive = static function(string $segment) use ($_uriPath): string {
                     Nosotros
                 </a>
             </div>
-            <?php if (empty($auth_user)): ?>
+            <?php if (empty($headerAuthUser)): ?>
                 <div class="mt-3 pt-3">
                     <a href="<?= BASE_URL ?>/login"
                        class="flex items-center justify-center gap-2 w-full px-4 py-2.5 text-sm font-semibold text-on-primary gradient-scholar rounded-[0.375rem] transition-opacity duration-200 hover:opacity-90">

@@ -79,6 +79,23 @@ final class LoanController extends BaseController
             return Response::redirect(BASE_URL . '/login');
         }
 
+        $countStmt = $this->db->prepare(
+            "SELECT COUNT(*)
+             FROM loans l
+             WHERE l.user_id = :user_id"
+        );
+        $countStmt->bindValue(':user_id', $currentUserId, \PDO::PARAM_INT);
+        $countStmt->execute();
+        $totalLoans = (int) $countStmt->fetchColumn();
+
+        $perPage = 5;
+        $totalPages = max(1, (int) ceil($totalLoans / $perPage));
+        $page = max(1, (int) $request->get('page', 1));
+        if ($page > $totalPages) {
+            $page = $totalPages;
+        }
+        $offset = ($page - 1) * $perPage;
+
         $stmt = $this->db->prepare(
             "SELECT
                 l.id,
@@ -97,15 +114,27 @@ final class LoanController extends BaseController
                                 b.digital_url
              FROM loans l
              JOIN resources b ON b.id = l.resource_id
-               WHERE l.user_id = :user_id
-             ORDER BY l.loan_at DESC"
+             WHERE l.user_id = :user_id
+             ORDER BY l.loan_at DESC
+             LIMIT :limit OFFSET :offset"
         );
-           $stmt->bindValue(':user_id', $currentUserId, \PDO::PARAM_INT);
-           $stmt->execute();
+        $stmt->bindValue(':user_id', $currentUserId, \PDO::PARAM_INT);
+        $stmt->bindValue(':limit', $perPage, \PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, \PDO::PARAM_INT);
+        $stmt->execute();
         $loans = array_values(array_filter(
             $stmt->fetchAll(),
             static fn(array $loan): bool => (int) ($loan['user_id'] ?? 0) === $currentUserId
         ));
+
+        $summaryStmt = $this->db->prepare(
+            "SELECT status, COUNT(*) AS total
+             FROM loans
+             WHERE user_id = :user_id
+             GROUP BY status"
+        );
+        $summaryStmt->bindValue(':user_id', $currentUserId, \PDO::PARAM_INT);
+        $summaryStmt->execute();
 
         $summary = [
             'active' => 0,
@@ -114,10 +143,10 @@ final class LoanController extends BaseController
             'lost' => 0,
         ];
 
-        foreach ($loans as $loan) {
-            $status = (string) ($loan['status'] ?? '');
+        foreach ($summaryStmt->fetchAll() as $row) {
+            $status = (string) ($row['status'] ?? '');
             if (isset($summary[$status])) {
-                $summary[$status]++;
+                $summary[$status] = (int) ($row['total'] ?? 0);
             }
         }
 
@@ -129,6 +158,14 @@ final class LoanController extends BaseController
             'auth_user' => $authUser,
             'loans' => $loans,
             'summary' => $summary,
+            'pagination' => [
+                'page' => $page,
+                'per_page' => $perPage,
+                'total' => $totalLoans,
+                'total_pages' => $totalPages,
+                'from' => $totalLoans > 0 ? ($offset + 1) : 0,
+                'to' => min($offset + $perPage, $totalLoans),
+            ],
         ], 'layouts/panel'));
     }
 

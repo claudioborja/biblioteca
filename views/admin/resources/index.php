@@ -55,11 +55,11 @@ $typeLabels = [
         <div class="flex items-center gap-2">
             <a href="<?= BASE_URL ?>/admin/resources/report/pdf"
                class="inline-flex items-center gap-2 rounded-xl border border-outline-variant bg-white px-4 py-2 text-sm font-semibold text-on-surface-muted hover:bg-surface-container-low transition-colors">
-                <i class="bi bi-file-earmark-pdf text-sm"></i> PDF
+                <iconify-icon icon="mdi:file-pdf-box"></iconify-icon> PDF
             </a>
             <a href="<?= BASE_URL ?>/admin/resources/export"
                class="inline-flex items-center gap-2 rounded-xl border border-outline-variant bg-white px-4 py-2 text-sm font-semibold text-on-surface-muted hover:bg-surface-container-low transition-colors">
-                <i class="bi bi-file-earmark-spreadsheet text-sm"></i> Excel
+                <iconify-icon icon="mdi:file-excel-box"></iconify-icon> Excel
             </a>
             <a href="<?= BASE_URL ?>/admin/resources/create" class="rounded-xl gradient-scholar px-4 py-2 text-sm font-semibold text-white shadow-ambient hover:opacity-90 transition-opacity inline-flex items-center gap-2">
                 <i class="bi bi-plus-lg text-sm"></i> Nuevo recurso

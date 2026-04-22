@@ -168,6 +168,7 @@ $router->group(['prefix' => '/admin', 'middleware' => ['auth', 'role:admin,libra
     $router->get('/reports/users/export/csv', [Controllers\ReportController::class, 'exportUsersCsv'], 'admin.reports.users.csv');
     $router->get('/reports/users/export/pdf', [Controllers\ReportController::class, 'exportUsersPdf'], 'admin.reports.users.pdf');
     $router->get('/reports/fines/export/csv', [Controllers\ReportController::class, 'exportFinesCsv'], 'admin.reports.fines.csv');
+    $router->get('/reports/fines/export/excel', [Controllers\ReportController::class, 'exportFinesExcel'], 'admin.reports.fines.excel');
     $router->get('/reports/fines/export/pdf', [Controllers\ReportController::class, 'exportFinesPdf'], 'admin.reports.fines.pdf');
     $router->get('/reports/visits/export/csv', [Controllers\ReportController::class, 'exportVisitsCsv'], 'admin.reports.visits.csv');
     $router->get('/reports/visits/export/pdf', [Controllers\ReportController::class, 'exportVisitsPdf'], 'admin.reports.visits.pdf');

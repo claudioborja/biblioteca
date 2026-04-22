@@ -41,12 +41,12 @@ $visibleReservations = $reservations;
             <a href="<?= BASE_URL ?>/admin/reservations/export/excel"
                class="inline-flex items-center gap-2 rounded-xl border border-outline-variant bg-white px-3 py-2 text-sm font-semibold text-on-surface-muted hover:bg-surface-container-low transition-colors"
                title="Exportar reporte de reservas en Excel">
-                <?= Icons::download('w-4 h-4') ?> Excel
+                <iconify-icon icon="mdi:file-excel-box"></iconify-icon> Excel
             </a>
             <a href="<?= BASE_URL ?>/admin/reservations/export/pdf"
                class="inline-flex items-center gap-2 rounded-xl border border-outline-variant bg-white px-3 py-2 text-sm font-semibold text-on-surface-muted hover:bg-surface-container-low transition-colors"
                title="Exportar reporte de reservas en PDF">
-                <?= Icons::download('w-4 h-4') ?> PDF
+                <iconify-icon icon="mdi:file-pdf-box"></iconify-icon> PDF
             </a>
             <a href="<?= BASE_URL ?>/catalog"
                class="rounded-xl gradient-scholar px-4 py-2 text-sm font-semibold text-white shadow-ambient inline-flex items-center gap-2 hover:opacity-90 transition-opacity">

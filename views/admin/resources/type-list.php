@@ -59,6 +59,16 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
             <h1 class="headline-lg text-on-surface"><?= $e($cfg['label_plural']) ?></h1>
         </div>
         <div class="flex items-center gap-2">
+            <a href="<?= BASE_URL ?>/admin/resources/export?type=<?= $e($slug) ?>"
+               class="inline-flex items-center gap-2 rounded-xl border border-outline-variant bg-white px-4 py-2 text-sm font-semibold text-on-surface-muted hover:bg-surface-container-low transition-colors"
+               title="Exportar <?= $e($cfg['label_plural']) ?>">
+                <iconify-icon icon="mdi:file-excel-box"></iconify-icon> Excel
+            </a>
+            <a href="<?= BASE_URL ?>/admin/resources/report/pdf?type=<?= $e($slug) ?>"
+               class="inline-flex items-center gap-2 rounded-xl border border-outline-variant bg-white px-4 py-2 text-sm font-semibold text-on-surface-muted hover:bg-surface-container-low transition-colors"
+               title="Exportar <?= $e($cfg['label_plural']) ?> en PDF">
+                <iconify-icon icon="mdi:file-pdf-box"></iconify-icon> PDF
+            </a>
             <button type="button" id="js-open-type-create-modal"
                     data-create-url="<?= BASE_URL ?>/admin/resources/type/<?= $e($slug) ?>/create"
                     data-create-title="Nuevo <?= $e($cfg['label']) ?>"

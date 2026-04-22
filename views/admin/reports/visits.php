@@ -27,11 +27,11 @@ $rolLabel = static fn(string $r): array => match ($r) {
         <div class="flex flex-wrap gap-2">
             <a href="<?= BASE_URL ?>/admin/reports/visits/export/csv"
                class="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-ambient transition-colors hover:bg-emerald-700">
-                <i class="bi bi-file-earmark-excel text-sm"></i> Excel
+                <iconify-icon icon="mdi:file-excel-box"></iconify-icon> Excel
             </a>
             <a href="<?= BASE_URL ?>/admin/reports/visits/export/pdf"
                class="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-ambient transition-colors hover:bg-red-700">
-                <i class="bi bi-file-earmark-pdf text-sm"></i> PDF
+                <iconify-icon icon="mdi:file-pdf-box"></iconify-icon> PDF
             </a>
             <?php if (($auth_user['role'] ?? '') === 'admin'): ?>
             <button type="button" id="btn-purge-visits"
