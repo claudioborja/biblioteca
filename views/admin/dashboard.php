@@ -565,7 +565,11 @@ $csrfToken = (string) \Core\Session::get('_csrf_token', '');
         },
         options: {
             responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { display: false }, tooltip: sharedTooltip },
+            plugins: { 
+                legend: { display: false }, 
+                tooltip: sharedTooltip,
+                datalabels: { display: false }
+            },
             scales: {
                 x: { grid: { display: false }, ticks: { font } },
                 y: { beginAtZero: true, grid: { color: gridColor }, ticks: { font, precision: 0 } }
@@ -591,7 +595,11 @@ $csrfToken = (string) \Core\Session::get('_csrf_token', '');
         },
         options: {
             responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { display: false }, tooltip: sharedTooltip },
+            plugins: { 
+                legend: { display: false }, 
+                tooltip: sharedTooltip,
+                datalabels: { display: false }
+            },
             scales: {
                 x: { grid: { display: false }, ticks: { font } },
                 y: { beginAtZero: true, grid: { color: gridColor }, ticks: { font, precision: 0 } }
@@ -604,6 +612,8 @@ $csrfToken = (string) \Core\Session::get('_csrf_token', '');
     const typesData = <?= json_encode(array_map(fn($t) => (int)($t['resources_count'] ?? 0), $types)) ?>;
     const typesTotalResources = <?= (int)$totalResources ?>;
     const typesPercentages = typesData.map(v => v > 0 ? Math.round((v / typesTotalResources) * 100) : 0);
+    const typesMaxValue = Math.max(...typesData);
+    const typesThreshold = typesMaxValue * 0.15; // Si es <15% del máximo, mostrar en un lado
     
     new Chart(document.getElementById('chart-types'), {
         type: 'bar',
@@ -622,14 +632,14 @@ $csrfToken = (string) \Core\Session::get('_csrf_token', '');
             maintainAspectRatio: false,
             plugins: {
                 legend: { display: false },
-                tooltip: { enabled: false },
+                tooltip: sharedTooltip,
                 datalabels: {
                     display: true,
-                    anchor: 'center',
-                    align: 'center',
-                    offset: 0,
+                    anchor: (context) => context.dataset.data[context.dataIndex] > typesThreshold ? 'center' : 'end',
+                    align: (context) => context.dataset.data[context.dataIndex] > typesThreshold ? 'center' : 'right',
+                    offset: (context) => context.dataset.data[context.dataIndex] > typesThreshold ? 0 : 8,
                     font: { size: 13, weight: 'bold' },
-                    color: '#ffffff',
+                    color: (context) => context.dataset.data[context.dataIndex] > typesThreshold ? '#ffffff' : '#6b7280',
                     formatter: (value, context) => value + ' (' + typesPercentages[context.dataIndex] + '%)',
                 }
             },
