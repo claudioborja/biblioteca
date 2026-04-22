@@ -504,6 +504,9 @@ final class ReservationController extends BaseController
         )->fetchAll();
 
         $libraryName = (string) ($this->panelSettings()['library_name'] ?? 'Biblioteca');
+        $ecuadorNow = $this->ecuadorNow();
+        $generatedAt = $ecuadorNow->format('d/m/Y H:i');
+        $fileSuffix = $ecuadorNow->format('Ymd_His');
         $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle('Reservas');
@@ -514,7 +517,7 @@ final class ReservationController extends BaseController
         $allBorders = ['allBorders' => $borderThin];
 
         $sheet->mergeCells('A1:I1');
-        $sheet->setCellValue('A1', $libraryName . ' · Reporte de reservas · ' . date('d/m/Y H:i'));
+        $sheet->setCellValue('A1', $libraryName . ' · Reporte de reservas · ' . $generatedAt);
         $sheet->getStyle('A1')->applyFromArray([
             'font' => ['bold' => true, 'size' => 13, 'color' => ['argb' => 'FF1E3A5F']],
             'alignment' => [
@@ -594,9 +597,9 @@ final class ReservationController extends BaseController
         $spreadsheet->getProperties()
             ->setCreator($libraryName)
             ->setTitle('Reporte de reservas')
-            ->setDescription('Generado el ' . date('d/m/Y H:i'));
+            ->setDescription('Generado el ' . $generatedAt);
 
-        $filename = 'reservas_' . date('Ymd_His') . '.xlsx';
+        $filename = 'reservas_' . $fileSuffix . '.xlsx';
         ob_start();
         $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
         $writer->save('php://output');
@@ -636,6 +639,9 @@ final class ReservationController extends BaseController
         )->fetchAll();
 
         $libraryName = (string) ($this->panelSettings()['library_name'] ?? 'Biblioteca');
+        $ecuadorNow = $this->ecuadorNow();
+        $generatedAt = $ecuadorNow->format('d/m/Y H:i');
+        $fileSuffix = $ecuadorNow->format('Ymd_His');
         $data = array_map(function (array $row): array {
             return [
                 '#' . (int) ($row['id'] ?? 0),
@@ -658,13 +664,13 @@ final class ReservationController extends BaseController
             'rows' => $data,
             'col_widths' => [18, 40, 24, 78, 14, 25, 28, 44],
             'orientation' => 'L',
-            'generated_at' => date('d/m/Y H:i'),
+            'generated_at' => $generatedAt,
             'generated_by' => (string) ($authUser['name'] ?? ''),
         ]);
 
         return new Response($content, 200, [
             'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'attachment; filename="reservas_' . date('Ymd_His') . '.pdf"',
+            'Content-Disposition' => 'attachment; filename="reservas_' . $fileSuffix . '.pdf"',
             'Cache-Control' => 'no-store, no-cache, must-revalidate',
             'Pragma' => 'no-cache',
         ]);
@@ -708,5 +714,10 @@ final class ReservationController extends BaseController
             return $expiresAt;
         }
         return '-';
+    }
+
+    private function ecuadorNow(): \DateTimeImmutable
+    {
+        return new \DateTimeImmutable('now', new \DateTimeZone('America/Guayaquil'));
     }
 }

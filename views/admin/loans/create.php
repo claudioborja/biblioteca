@@ -102,7 +102,7 @@ $isModal = isset($_GET['modal']) && $_GET['modal'] === '1';
                     </div>
 
                     <p id="resource-selected" class="mt-1 hidden text-xs text-emerald-700 font-semibold"></p>
-                    <p class="mt-1 text-[11px] text-on-surface-subtle">Solo recursos físicos activos con copias disponibles.</p>
+                    <p class="mt-1 text-[11px] text-on-surface-subtle">Se muestran todos los recursos. Los deshabilitados no tienen copias disponibles.</p>
                 </div>
             </div>
 
