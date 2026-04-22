@@ -149,6 +149,22 @@ $csrfToken = (string) \Core\Session::get('_csrf_token', '');
                         <span class="text-white/65">Visitas hoy</span>
                         <span class="ml-1 font-display text-xl font-extrabold text-white"><?= number_format((int)($visitStats['visits_today'] ?? 0)) ?></span>
                     </p>
+                    <p class="text-sm">
+                        <span class="text-white/65">Vencidos</span>
+                        <span class="ml-1 font-display text-xl font-extrabold text-white"><?= number_format((int)($loanStats['overdue_loans'] ?? 0)) ?></span>
+                    </p>
+                    <p class="text-sm">
+                        <span class="text-white/65">Multas</span>
+                        <span class="ml-1 font-display text-xl font-extrabold text-white">$<?= number_format((float)($fineStats['pending_amount'] ?? 0), 2) ?></span>
+                    </p>
+                    <p class="text-sm">
+                        <span class="text-white/65">Socios</span>
+                        <span class="ml-1 font-display text-xl font-extrabold text-white"><?= number_format((int)($userStats['member_users'] ?? 0)) ?></span>
+                    </p>
+                    <p class="text-sm">
+                        <span class="text-white/65">Docentes</span>
+                        <span class="ml-1 font-display text-xl font-extrabold text-white"><?= number_format((int)($userStats['teacher_users'] ?? 0)) ?></span>
+                    </p>
                 </div>
             </div>
         </div>
