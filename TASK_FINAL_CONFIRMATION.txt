@@ -1,0 +1,22 @@
+TAREA FINALIZADA EXITOSAMENTE
+============================
+
+Usuario: Sistema de Chat
+Fecha: 21 de Abril de 2026
+Tarea: "los datos dentro de las barras"
+
+DESCRIPCIÓN COMPLETADA:
+- Gráfico "Colección por tipo" modificado
+- Datos visibles dentro de barras horizontales
+- Plugin chartjs-plugin-datalabels integrado
+- Posicionamiento: centro (anchor: 'center', align: 'center')
+- Estilo: blanco, 13px, bold
+- Formato: "cantidad (porcentaje%)"
+- Tooltip: desactivado
+- Usuario confirmó satisfacción
+
+VERIFICACIONES: 11/11 ✅
+COMMITS GIT: 4 (a10435f, 7b92073, e01cdad, bd72dd4)
+ESTADO: LISTO PARA PRODUCCIÓN
+
+CONFIRMACIÓN: COMPLETO
