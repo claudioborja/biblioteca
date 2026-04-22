@@ -96,6 +96,12 @@ $flashInfo    = \Core\Session::getFlash('info');
                             <div><span class="font-medium text-on-surface-subtle">Devuelto:</span> <?= $e((new DateTime($loan['returned_at']))->format('d/m/Y')) ?></div>
                         <?php endif; ?>
                     </div>
+                        <?php if ((string) ($loan['support_type'] ?? '') === 'digital' && !empty($loan['digital_url'])): ?>
+                            <a href="<?= BASE_URL ?>/account/digital-resources/<?= (int) ($loan['resource_id'] ?? 0) ?>/read" target="_blank" rel="noopener"
+                               class="mt-3 block w-full rounded-lg border border-primary/40 bg-primary/5 px-3 py-1.5 text-center text-xs font-semibold text-primary hover:bg-primary/10 transition-colors">
+                                Leer recurso digital
+                            </a>
+                        <?php endif; ?>
                         <?php if (in_array((string) ($loan['status'] ?? ''), ['active', 'overdue'], true) && (int) ($loan['renewals_count'] ?? 0) < $maxRenewals): ?>
                             <form method="POST" action="<?= BASE_URL ?>/account/loans/<?= (int) $loan['id'] ?>/renew" class="mt-3">
                                 <input type="hidden" name="_csrf_token" value="<?= $e((string) \Core\Session::get('_csrf_token', '')) ?>">
@@ -151,6 +157,13 @@ $flashInfo    = \Core\Session::getFlash('info');
                                 </td>
                                 <td class="px-4 py-3.5 text-on-surface-muted max-w-[200px] truncate"><?= $e($loan['notes'] ?? '-') ?></td>
                                     <td class="px-4 py-3.5">
+                                        <?php if ((string) ($loan['support_type'] ?? '') === 'digital' && !empty($loan['digital_url'])): ?>
+                                            <a href="<?= BASE_URL ?>/account/digital-resources/<?= (int) ($loan['resource_id'] ?? 0) ?>/read" target="_blank" rel="noopener"
+                                               class="mb-2 inline-flex rounded-lg border border-primary/40 bg-primary/5 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/10 transition-colors whitespace-nowrap">
+                                                Leer digital
+                                            </a>
+                                            <br>
+                                        <?php endif; ?>
                                         <?php if (in_array((string) ($loan['status'] ?? ''), ['active', 'overdue'], true) && (int) ($loan['renewals_count'] ?? 0) < $maxRenewals): ?>
                                             <form method="POST" action="<?= BASE_URL ?>/account/loans/<?= (int) $loan['id'] ?>/renew">
                                                 <input type="hidden" name="_csrf_token" value="<?= $e((string) \Core\Session::get('_csrf_token', '')) ?>">

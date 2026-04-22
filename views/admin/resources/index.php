@@ -30,7 +30,7 @@ sort($categories);
 $typeLabels = [
     'book'        => 'Libro',
     'ebook'       => 'Digital',
-    'journal'     => 'Revista / Artículo',
+    'journal'     => 'Revista',
     'thesis'      => 'Tesis',
     'map'         => 'Otro',
     'score'       => 'Otro',

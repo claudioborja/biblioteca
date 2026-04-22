@@ -7,6 +7,14 @@ $homeHref = match($auth_user['role'] ?? '') {
     'teacher' => BASE_URL . '/teacher',
     default => BASE_URL . '/account',
 };
+
+$panelLabel = match($auth_user['role'] ?? '') {
+    'admin' => 'Panel de administración',
+    'librarian' => 'Panel de bibliotecario',
+    'teacher' => 'Panel docente',
+    'user' => 'Panel de socio',
+    default => 'Panel de usuario',
+};
 ?>
 <header class="h-[3.75rem] bg-primary sticky top-0 z-40 flex items-center shadow-sm" role="banner">
     <div class="flex items-center w-full px-4 sm:px-6 gap-3">
@@ -33,7 +41,7 @@ $homeHref = match($auth_user['role'] ?? '') {
         <div class="hidden sm:block h-5 w-px bg-white/20"></div>
 
         <!-- Section label -->
-        <span class="hidden sm:block text-xs font-semibold text-white/40 uppercase tracking-wider">Panel</span>
+        <span class="hidden sm:block text-xs font-semibold text-white/40 uppercase tracking-wider"><?= $_e($panelLabel) ?></span>
 
         <!-- Spacer -->
         <div class="flex-1"></div>

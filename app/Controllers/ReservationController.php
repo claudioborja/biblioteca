@@ -10,6 +10,7 @@ use Core\Response;
 use Core\Session;
 use Core\View;
 use Helpers\SafeRedirect;
+use Services\PdfService;
 
 final class ReservationController extends BaseController
 {
@@ -116,7 +117,6 @@ final class ReservationController extends BaseController
                     support_type
                  FROM resources
                  WHERE is_active = 1
-                   AND support_type <> 'digital'
                    AND (
                         title LIKE :like
                         OR isbn_13 LIKE :like
@@ -166,7 +166,6 @@ final class ReservationController extends BaseController
                 "SELECT id
                  FROM resources
                  WHERE is_active = 1
-                   AND support_type <> 'digital'
                    AND (
                         title LIKE :like
                         OR isbn_13 LIKE :like
@@ -204,11 +203,6 @@ final class ReservationController extends BaseController
 
         if (!$resource || (int) ($resource['is_active'] ?? 0) !== 1) {
             Session::flash('error', 'El recurso no esta disponible para reservacion.');
-            return Response::redirect(BASE_URL . $redirect);
-        }
-
-        if ((string) ($resource['support_type'] ?? '') === 'digital') {
-            Session::flash('error', 'Los recursos digitales no requieren reservacion.');
             return Response::redirect(BASE_URL . $redirect);
         }
 
@@ -257,7 +251,12 @@ final class ReservationController extends BaseController
             throw $e;
         }
 
-        Session::flash('success', 'Reservacion creada correctamente. Tu posicion en fila es #' . $queuePosition . '.');
+        $successMessage = 'Reservacion creada correctamente. Tu posicion en fila es #' . $queuePosition . '.';
+        if ((string) ($resource['support_type'] ?? '') === 'digital') {
+            $successMessage .= ' Ya puedes leer el PDF desde el detalle del recurso.';
+        }
+
+        Session::flash('success', $successMessage);
         return Response::redirect(BASE_URL . '/account/reservations');
     }
 
@@ -478,6 +477,199 @@ final class ReservationController extends BaseController
         return Response::redirect(BASE_URL . '/admin/reservations');
     }
 
+    public function exportExcel(Request $request): Response
+    {
+        $authUser = $this->resolveAuthUser();
+        if ($authUser === null) {
+            Session::destroy();
+            return Response::redirect(BASE_URL . '/login');
+        }
+
+        $rows = $this->db->query(
+            "SELECT
+                r.id,
+                r.status,
+                r.queue_position,
+                r.created_at,
+                r.notified_at,
+                r.expires_at,
+                u.name AS user_name,
+                COALESCE(u.user_number, '') AS user_number,
+                b.title AS resource_title,
+                COALESCE(b.isbn_13, '') AS resource_code
+             FROM reservations r
+             JOIN users u ON u.id = r.user_id
+             JOIN resources b ON b.id = r.resource_id
+             ORDER BY r.created_at DESC"
+        )->fetchAll();
+
+        $libraryName = (string) ($this->panelSettings()['library_name'] ?? 'Biblioteca');
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Reservas');
+
+        $headerFill = ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['argb' => 'FF1E3A5F']];
+        $headerFont = ['bold' => true, 'color' => ['argb' => 'FFFFFFFF'], 'size' => 10];
+        $borderThin = ['style' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN, 'color' => ['argb' => 'FFD0D8E4']];
+        $allBorders = ['allBorders' => $borderThin];
+
+        $sheet->mergeCells('A1:I1');
+        $sheet->setCellValue('A1', $libraryName . ' · Reporte de reservas · ' . date('d/m/Y H:i'));
+        $sheet->getStyle('A1')->applyFromArray([
+            'font' => ['bold' => true, 'size' => 13, 'color' => ['argb' => 'FF1E3A5F']],
+            'alignment' => [
+                'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_LEFT,
+                'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER,
+            ],
+        ]);
+        $sheet->getRowDimension(1)->setRowHeight(28);
+
+        $headers = [
+            'A' => 'Reserva',
+            'B' => 'Usuario',
+            'C' => 'N° Usuario',
+            'D' => 'Recurso',
+            'E' => 'ISBN/Código',
+            'F' => 'Fila',
+            'G' => 'Estado',
+            'H' => 'Solicitada',
+            'I' => 'Notificada/Expira',
+        ];
+        foreach ($headers as $col => $label) {
+            $sheet->setCellValue($col . '2', $label);
+        }
+        $sheet->getStyle('A2:I2')->applyFromArray([
+            'fill' => $headerFill,
+            'font' => $headerFont,
+            'alignment' => [
+                'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
+                'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER,
+            ],
+            'borders' => $allBorders,
+        ]);
+        $sheet->getRowDimension(2)->setRowHeight(20);
+
+        $dataRow = 3;
+        foreach ($rows as $row) {
+            $sheet->setCellValue('A' . $dataRow, '#' . (int) ($row['id'] ?? 0));
+            $sheet->setCellValue('B' . $dataRow, (string) ($row['user_name'] ?? ''));
+            $sheet->setCellValue('C' . $dataRow, (string) ($row['user_number'] ?? ''));
+            $sheet->setCellValue('D' . $dataRow, (string) ($row['resource_title'] ?? ''));
+            $sheet->setCellValue('E' . $dataRow, (string) ($row['resource_code'] ?? ''));
+            $sheet->setCellValue('F' . $dataRow, '#' . (int) ($row['queue_position'] ?? 0));
+            $sheet->setCellValue('G' . $dataRow, $this->reservationStatusLabel((string) ($row['status'] ?? '')));
+            $sheet->setCellValue('H' . $dataRow, (string) ($row['created_at'] ?? ''));
+            $sheet->setCellValue('I' . $dataRow, $this->reservationTimelineValue($row));
+
+            if ($dataRow % 2 === 0) {
+                $sheet->getStyle('A' . $dataRow . ':I' . $dataRow)->applyFromArray([
+                    'fill' => [
+                        'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                        'startColor' => ['argb' => 'FFF5F7FA'],
+                    ],
+                ]);
+            }
+            $sheet->getStyle('A' . $dataRow . ':I' . $dataRow)->applyFromArray(['borders' => $allBorders]);
+            $dataRow++;
+        }
+
+        foreach ([
+            'A' => 14,
+            'B' => 28,
+            'C' => 16,
+            'D' => 42,
+            'E' => 18,
+            'F' => 10,
+            'G' => 16,
+            'H' => 20,
+            'I' => 24,
+        ] as $col => $width) {
+            $sheet->getColumnDimension($col)->setWidth($width);
+        }
+
+        $sheet->freezePane('A3');
+        $lastRow = max($dataRow - 1, 2);
+        $sheet->setAutoFilter('A2:I' . $lastRow);
+
+        $spreadsheet->getProperties()
+            ->setCreator($libraryName)
+            ->setTitle('Reporte de reservas')
+            ->setDescription('Generado el ' . date('d/m/Y H:i'));
+
+        $filename = 'reservas_' . date('Ymd_His') . '.xlsx';
+        ob_start();
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        $writer->save('php://output');
+        $xlsx = ob_get_clean();
+
+        return new Response((string) $xlsx, 200, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate',
+            'Pragma' => 'no-cache',
+        ]);
+    }
+
+    public function exportPdf(Request $request): Response
+    {
+        $authUser = $this->resolveAuthUser();
+        if ($authUser === null) {
+            Session::destroy();
+            return Response::redirect(BASE_URL . '/login');
+        }
+
+        $rows = $this->db->query(
+            "SELECT
+                r.id,
+                r.status,
+                r.queue_position,
+                r.created_at,
+                r.notified_at,
+                r.expires_at,
+                u.name AS user_name,
+                COALESCE(u.user_number, '') AS user_number,
+                b.title AS resource_title
+             FROM reservations r
+             JOIN users u ON u.id = r.user_id
+             JOIN resources b ON b.id = r.resource_id
+             ORDER BY r.created_at DESC"
+        )->fetchAll();
+
+        $libraryName = (string) ($this->panelSettings()['library_name'] ?? 'Biblioteca');
+        $data = array_map(function (array $row): array {
+            return [
+                '#' . (int) ($row['id'] ?? 0),
+                (string) ($row['user_name'] ?? ''),
+                (string) ($row['user_number'] ?? ''),
+                (string) ($row['resource_title'] ?? ''),
+                '#' . (int) ($row['queue_position'] ?? 0),
+                $this->reservationStatusLabel((string) ($row['status'] ?? '')),
+                substr((string) ($row['created_at'] ?? ''), 0, 16),
+                $this->reservationTimelineValue($row),
+            ];
+        }, $rows);
+
+        $pdfService = new PdfService();
+        $content = $pdfService->renderSimpleTableReport([
+            'library' => $libraryName,
+            'title' => 'Informe de Reservas',
+            'subtitle' => 'Cola de reservas del sistema · Total: ' . count($rows),
+            'headers' => ['Reserva', 'Usuario', 'N° Usuario', 'Recurso', 'Fila', 'Estado', 'Solicitada', 'Notificada/Expira'],
+            'rows' => $data,
+            'col_widths' => [18, 40, 24, 78, 14, 25, 28, 44],
+            'orientation' => 'L',
+            'generated_at' => date('d/m/Y H:i'),
+            'generated_by' => (string) ($authUser['name'] ?? ''),
+        ]);
+
+        return new Response($content, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'attachment; filename="reservas_' . date('Ymd_His') . '.pdf"',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate',
+            'Pragma' => 'no-cache',
+        ]);
+    }
+
     private function resolveRedirectTarget(string $raw): string
     {
         $fallback = '/account/reservations';
@@ -487,5 +679,34 @@ final class ReservationController extends BaseController
         }
 
         return SafeRedirect::to($candidate, $fallback);
+    }
+
+    private function reservationStatusLabel(string $status): string
+    {
+        return match ($status) {
+            'waiting' => 'Pendiente',
+            'notified' => 'Notificada',
+            'expired' => 'Expirada',
+            'cancelled' => 'Cancelada',
+            'fulfilled' => 'Completada',
+            default => ucfirst($status),
+        };
+    }
+
+    private function reservationTimelineValue(array $row): string
+    {
+        $notifiedAt = trim((string) ($row['notified_at'] ?? ''));
+        $expiresAt = trim((string) ($row['expires_at'] ?? ''));
+
+        if ($notifiedAt !== '' && $expiresAt !== '') {
+            return $notifiedAt . ' / ' . $expiresAt;
+        }
+        if ($notifiedAt !== '') {
+            return $notifiedAt;
+        }
+        if ($expiresAt !== '') {
+            return $expiresAt;
+        }
+        return '-';
     }
 }

@@ -82,17 +82,14 @@ $isAccountSectionActive = str_starts_with($_path, '/account');
                 <div class="ml-6 mb-2 mt-0.5 space-y-0.5 border-l border-outline-variant/60 pl-2 text-[12px]">
                     <?php
                     $_resLinks = [
-                        ['Todos',                '/admin/resources',                    false],
-                        ['Libros físicos',       '/admin/resources/type/libros',        true],
-                        ['Libros digitales',     '/admin/resources/type/digitales',     true],
-                        ['Revistas / Artículos', '/admin/resources/type/revistas',      true],
-                        ['Tesis',                '/admin/resources/type/tesis',         true],
-                        ['Otros',                '/admin/resources/type/otros',         true],
+                        ['Libros físicos',   '/admin/resources/type/libros'],
+                        ['Libros digitales', '/admin/resources/type/digitales'],
+                        ['Revistas',         '/admin/resources/type/revistas'],
+                        ['Tesis',            '/admin/resources/type/tesis'],
+                        ['Otros',            '/admin/resources/type/otros'],
                     ];
-                    foreach ($_resLinks as [$_rLabel, $_rPath, $_isType]):
-                        $_rActive = $_isType
-                            ? str_starts_with($_path, $_rPath)
-                            : ($_path === '/admin/resources');
+                    foreach ($_resLinks as [$_rLabel, $_rPath]):
+                        $_rActive = str_starts_with($_path, $_rPath);
                     ?>
                     <a href="<?= BASE_URL . $_e($_rPath) ?>"
                        class="block rounded-md px-2 py-1.5 transition-colors duration-150 <?= $_rActive ? 'bg-white text-primary font-semibold' : 'text-on-surface-muted hover:bg-white hover:text-on-surface' ?>">
@@ -175,16 +172,34 @@ $isAccountSectionActive = str_starts_with($_path, '/account');
 
         <?php if ($role === 'admin'): ?>
             <p class="px-2 pt-4 pb-1 label-sm">Sistema</p>
-            <a href="<?= BASE_URL ?>/admin/settings"
-               class="flex items-center gap-2.5 px-2.5 py-2 rounded-[0.375rem] transition-colors duration-150 <?= $active('/admin/settings') ?>">
-                <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12a7.5 7.5 0 0015 0m-15 0a7.5 7.5 0 1115 0m-15 0H3m16.5 0H21m-1.5 0H12m-8.457 3.077l1.41-.513m14.095-5.13l1.41-.513M5.106 17.785l1.15-.964m11.49-9.642l1.149-.964M7.501 19.795l.75-1.3m7.5-12.99l.75-1.3m-6.063 16.658l.26-1.477m2.605-14.772l.26-1.477m0 17.726l-.26-1.477M10.698 4.614l-.26-1.477M16.5 19.794l-.75-1.299M7.5 4.205L12 12m6.894 5.785l-1.149-.964M6.256 7.178l-1.15-.964m15.352 8.864l-1.41-.513M4.954 9.435l-1.41-.514M12.002 12l-3.75 6.495"/></svg>
-                Configuración
-            </a>
-            <a href="<?= BASE_URL ?>/admin/settings/mail-queue"
-               class="flex items-center gap-2.5 px-2.5 py-2 rounded-[0.375rem] transition-colors duration-150 <?= $active('/admin/settings/mail-queue') ?>">
-                <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75"><path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"/></svg>
-                Cola de correo
-            </a>
+            <details class="group rounded-[0.5rem]" <?= str_starts_with($_path, '/admin/settings') ? 'open' : '' ?>>
+                <summary class="flex items-center gap-2.5 px-2.5 py-2 rounded-[0.375rem] cursor-pointer list-none transition-colors duration-150 select-none <?= str_starts_with($_path, '/admin/settings') ? 'bg-primary/8 text-primary font-semibold' : 'text-on-surface-muted hover:bg-surface-container hover:text-on-surface' ?>">
+                    <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.75"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12a7.5 7.5 0 0015 0m-15 0a7.5 7.5 0 1115 0m-15 0H3m16.5 0H21m-1.5 0H12m-8.457 3.077l1.41-.513m14.095-5.13l1.41-.513M5.106 17.785l1.15-.964m11.49-9.642l1.149-.964M7.501 19.795l.75-1.3m7.5-12.99l.75-1.3m-6.063 16.658l.26-1.477m2.605-14.772l.26-1.477m0 17.726l-.26-1.477M10.698 4.614l-.26-1.477M16.5 19.794l-.75-1.299M7.5 4.205L12 12m6.894 5.785l-1.149-.964M6.256 7.178l-1.15-.964m15.352 8.864l-1.41-.513M4.954 9.435l-1.41-.514M12.002 12l-3.75 6.495"/></svg>
+                    <span class="flex-1">Configuración</span>
+                    <svg class="w-3 h-3 shrink-0 transition-transform duration-200 group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                </summary>
+                <div class="ml-6 mb-2 mt-0.5 space-y-0.5 border-l border-outline-variant/60 pl-2 text-[12px]">
+                    <?php
+                    $_sLinks = [
+                        ['Biblioteca', '/admin/settings/library'],
+                        ['Préstamos', '/admin/settings/loans'],
+                        ['Multas', '/admin/settings/fines'],
+                        ['Comunicación', '/admin/settings/notifications'],
+                        ['Correo SMTP', '/admin/settings/smtp'],
+                        ['Página About', '/admin/settings/about'],
+                        ['Sistema', '/admin/settings/system'],
+                        ['Cola de correo', '/admin/settings/mail-queue'],
+                    ];
+                    foreach ($_sLinks as [$_sLabel, $_sPath]):
+                        $_sActive = ($_path === $_sPath);
+                    ?>
+                    <a href="<?= BASE_URL . $_e($_sPath) ?>"
+                       class="block rounded-md px-2 py-1.5 transition-colors duration-150 <?= $_sActive ? 'bg-white text-primary font-semibold' : 'text-on-surface-muted hover:bg-white hover:text-on-surface' ?>">
+                        <?= $_e($_sLabel) ?>
+                    </a>
+                    <?php endforeach; ?>
+                </div>
+            </details>
 
             <details class="group rounded-[0.5rem]" <?= str_starts_with($_path, '/admin/audit') ? 'open' : '' ?>>
                 <summary class="flex items-center gap-2.5 px-2.5 py-2 rounded-[0.375rem] cursor-pointer list-none transition-colors duration-150 select-none <?= str_starts_with($_path, '/admin/audit') ? 'bg-primary/8 text-primary font-semibold' : 'text-on-surface-muted hover:bg-surface-container hover:text-on-surface' ?>">

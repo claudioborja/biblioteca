@@ -15,7 +15,7 @@ sort($filterCategories);
 $allTypes = [
     'libros'    => 'Libros físicos',
     'digitales' => 'Libros digitales',
-    'revistas'  => 'Revistas / Artículos',
+    'revistas'  => 'Revistas',
     'tesis'     => 'Tesis',
     'otros'     => 'Otros',
 ];
@@ -57,10 +57,11 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
         <div>
             <p class="label-sm">Administración</p>
             <h1 class="headline-lg text-on-surface"><?= $e($cfg['label_plural']) ?></h1>
-            <p class="body-md mt-1">Gestión del catálogo de <?= $e(mb_strtolower($cfg['label_plural'])) ?>.</p>
         </div>
         <div class="flex items-center gap-2">
-            <button type="button" id="js-open-type-wizard"
+            <button type="button" id="js-open-type-create-modal"
+                    data-create-url="<?= BASE_URL ?>/admin/resources/type/<?= $e($slug) ?>/create"
+                    data-create-title="Nuevo <?= $e($cfg['label']) ?>"
                     class="rounded-xl gradient-scholar px-4 py-2 text-sm font-semibold text-white shadow-ambient hover:opacity-90 transition-opacity inline-flex items-center gap-2">
                 <i class="bi bi-plus-lg text-sm"></i> Nuevo <?= $e($cfg['label']) ?>
             </button>
@@ -99,7 +100,8 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
             <div>
                 <label for="type-page-size" class="label-sm">Filas</label>
                 <select id="type-page-size" class="mt-1 w-full rounded-xl border border-outline-variant bg-surface-container-lowest px-3 py-2.5 text-sm focus:border-primary focus:outline-none">
-                    <option value="5" selected>5</option>
+                    <option value="4" selected>4</option>
+                    <option value="5">5</option>
                     <option value="10">10</option>
                     <option value="15">15</option>
                     <option value="25">25</option>
@@ -114,6 +116,7 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
             <table id="type-resources-table" class="min-w-full text-left">
                 <thead class="bg-surface-container-low text-xs uppercase tracking-wide text-on-surface-subtle">
                     <tr>
+                        <th class="px-4 py-3 font-semibold w-16">Portada</th>
                         <th class="px-4 py-3 font-semibold">
                             <button type="button" data-sort="title" class="type-sort inline-flex items-center gap-1 hover:text-primary">
                                 Título <span class="text-[10px] opacity-70">⇅</span>
@@ -183,6 +186,22 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
                         data-status="<?= $e($rowStatus) ?>"
                         data-available="<?= $avail ?>"
                         data-copies="<?= $total ?>">
+                        <td class="px-4 py-3.5 align-top">
+                            <?php if (!empty($r['cover_image'])): ?>
+                            <img src="<?= $e(BASE_URL . $r['cover_image']) ?>"
+                                 alt="Portada de <?= $e($r['title'] ?? 'Recurso') ?>"
+                                 loading="lazy"
+                                 decoding="async"
+                                 width="40"
+                                 height="56"
+                                 class="h-14 w-10 rounded-lg border border-outline-variant/60 bg-surface-container-lowest object-cover shadow-sm">
+                            <?php else: ?>
+                            <div class="flex h-14 w-10 items-center justify-center rounded-lg border border-dashed border-outline-variant/70 bg-surface-container-lowest text-on-surface-subtle"
+                                 aria-label="Sin portada">
+                                <i class="bi bi-book text-sm"></i>
+                            </div>
+                            <?php endif; ?>
+                        </td>
                         <td class="px-4 py-3.5">
                             <p class="font-semibold text-on-surface" data-cell="title"><?= $e($r['title'] ?? '') ?></p>
                             <?php if ($r['isbn_13'] ?? ''): ?>
@@ -232,12 +251,28 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
                         </td>
                         <?php endif; ?>
                         <td class="px-4 py-3.5 text-right">
-                            <button type="button"
-                                    data-edit-url="<?= BASE_URL ?>/admin/resources/type/<?= $e($slug) ?>/<?= (int) $r['id'] ?>/edit"
-                                    data-edit-title="<?= $e($r['title'] ?? '') ?>"
-                                    class="ml-1 rounded-lg border border-primary/30 bg-primary/5 px-2.5 py-1.5 text-xs font-semibold text-primary hover:bg-primary/10 transition-colors js-open-type-edit-modal inline-flex items-center gap-1">
-                                <i class="bi bi-pencil-square text-[12px]"></i> Editar
-                            </button>
+                            <div class="inline-flex items-center gap-1.5">
+                                <button type="button"
+                                        data-edit-url="<?= BASE_URL ?>/admin/resources/type/<?= $e($slug) ?>/<?= (int) $r['id'] ?>/edit"
+                                        data-edit-title="<?= $e($r['title'] ?? '') ?>"
+                                        class="rounded-lg border border-primary/30 bg-primary/5 px-2.5 py-1.5 text-xs font-semibold text-primary hover:bg-primary/10 transition-colors js-open-type-edit-modal inline-flex items-center gap-1">
+                                    <i class="bi bi-pencil-square text-[12px]"></i> Editar
+                                </button>
+                                <form method="POST"
+                                      action="<?= BASE_URL ?>/admin/resources/type/<?= $e($slug) ?>/<?= (int) $r['id'] ?>/delete"
+                                      class="inline js-delete-resource-form"
+                                      data-resource-title="<?= $e($r['title'] ?? 'Recurso') ?>">
+                                    <input type="hidden" name="_csrf_token" value="<?= $e(\Core\Session::get('_csrf_token', '')) ?>">
+                                    <button type="button"
+                                            data-resource-title="<?= $e($r['title'] ?? 'Recurso') ?>"
+                                            class="js-open-delete-resource-modal rounded-lg border border-red-300 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors inline-flex items-center gap-1"
+                                            title="Eliminar recurso"
+                                            aria-label="Eliminar recurso"
+                                            >
+                                        <i class="bi bi-trash text-[12px]"></i> Eliminar
+                                    </button>
+                                </form>
+                            </div>
                         </td>
                     </tr>
                     <?php endforeach; ?>
@@ -255,6 +290,37 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
                 <button id="type-next" type="button" class="rounded-lg border border-outline-variant px-2.5 py-1.5 text-xs font-semibold inline-flex items-center gap-1">
                     Siguiente <i class="bi bi-arrow-right text-[12px]"></i>
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Delete resource modal ──────────────────────────────── -->
+    <div id="type-delete-modal" class="fixed inset-0 z-50 hidden" aria-hidden="true">
+        <div class="absolute inset-0 bg-primary/35 backdrop-blur-[1px]" data-close-type-delete-modal></div>
+        <div class="absolute inset-0 p-4 sm:p-6 flex items-center justify-center">
+            <div class="relative w-full max-w-md rounded-2xl border border-outline-variant/60 bg-white shadow-ambient-lg">
+                <div class="flex items-center gap-3 border-b border-outline-variant/60 px-5 py-4">
+                    <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600">
+                        <i class="bi bi-trash3 text-sm"></i>
+                    </span>
+                    <div>
+                        <p class="text-sm font-semibold text-on-surface">Eliminar recurso</p>
+                        <p id="type-delete-modal-subtitle" class="text-xs text-on-surface-muted"></p>
+                    </div>
+                </div>
+                <div class="px-5 py-4">
+                    <p class="text-sm text-on-surface-muted">Esta acción eliminará el recurso y su imagen de portada. No se puede deshacer.</p>
+                </div>
+                <div class="flex items-center justify-end gap-2 border-t border-outline-variant/60 px-5 py-3">
+                    <button type="button" id="type-delete-modal-cancel"
+                            class="rounded-xl border border-outline-variant bg-white px-4 py-2 text-sm font-semibold text-on-surface-muted hover:bg-surface-container-low transition-colors">
+                        Cancelar
+                    </button>
+                    <button type="button" id="type-delete-modal-confirm"
+                            class="rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 transition-colors inline-flex items-center gap-2">
+                        <i class="bi bi-trash3 text-sm"></i> Eliminar
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -329,16 +395,12 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
                 <!-- Wizard form -->
                 <form method="POST" action="<?= BASE_URL ?>/admin/resources/type/<?= $e($slug) ?>" id="type-wizard-form" enctype="multipart/form-data" class="flex flex-1 flex-col overflow-hidden">
                     <input type="hidden" name="_csrf_token" value="<?= $e(\Core\Session::get('_csrf_token', '')) ?>">
+                    <input type="hidden" name="form_source" value="wizard">
 
                     <div class="flex-1 overflow-y-auto px-5 py-5">
 
                         <!-- Step 0: Identificación -->
                         <div id="wizard-step-0" data-wizard-panel="0" class="space-y-4">
-                            <div>
-                                <h3 class="title-md text-on-surface">Identificación</h3>
-                                <p class="body-sm mt-1">Datos principales del recurso.</p>
-                            </div>
-
                             <div>
                                 <label class="label-sm">Título <span class="text-red-500">*</span></label>
                                 <input type="text" name="title" class="<?= $inputClass ?>" placeholder="Título completo" required>
@@ -413,10 +475,6 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
 
                         <!-- Step 1: Descripción -->
                         <div id="wizard-step-1" data-wizard-panel="1" class="hidden space-y-4">
-                            <div>
-                                <h3 class="title-md text-on-surface">Descripción</h3>
-                                <p class="body-sm mt-1">Resumen y portada del recurso.</p>
-                            </div>
                             <div>
                                 <label class="label-sm">Resumen / descripción</label>
                                 <textarea name="description" rows="6" class="<?= $inputClass ?>"
@@ -524,7 +582,7 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
                                 Siguiente <i class="bi bi-arrow-right text-sm"></i>
                             </button>
                             <button type="submit" id="wizard-submit-btn"
-                                    class="hidden inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-light transition-colors">
+                                    class="hidden items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-light transition-colors">
                                 <i class="bi bi-floppy text-sm"></i> Registrar
                             </button>
                         </div>
@@ -556,7 +614,7 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
 
     const state = {
         search: '', category: 'all', status: 'all',
-        page: 1, pageSize: 5,
+        page: 1, pageSize: 4,
         sortBy: 'title', sortDir: 'asc',
     };
 
@@ -675,6 +733,7 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
     const editFrame  = document.getElementById('type-edit-frame');
     const editTitle  = document.getElementById('type-edit-modal-title');
     const editSave   = document.getElementById('type-edit-modal-save');
+    const openCreateBtn = document.getElementById('js-open-type-create-modal');
 
     const openEditModal = (url, title) => {
         if (!editModal || !editFrame) return;
@@ -695,13 +754,21 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
     document.querySelectorAll('.js-open-type-edit-modal').forEach(btn => {
         btn.addEventListener('click', () => openEditModal(btn.dataset.editUrl || '', btn.dataset.editTitle || ''));
     });
+    openCreateBtn?.addEventListener('click', () => {
+        openEditModal(openCreateBtn.dataset.createUrl || '', openCreateBtn.dataset.createTitle || 'Nuevo recurso');
+    });
     document.querySelectorAll('[data-close-type-edit-modal]').forEach(btn => btn.addEventListener('click', closeEditModal));
     editSave?.addEventListener('click', () => editFrame?.contentWindow?.postMessage({ type: 'submit-resource-edit-form' }, '*'));
     document.addEventListener('keydown', e => {
         if (e.key === 'Escape' && editModal && !editModal.classList.contains('hidden')) closeEditModal();
     });
 
+    const createReloadGuardKey = 'resource-type-created-last-reload';
     window.addEventListener('message', e => {
+        if (editFrame && e.source && e.source !== editFrame.contentWindow) {
+            return;
+        }
+
         if (e.data?.type === 'resource-type-saved') {
             closeEditModal();
             if (e.data.payload) updateRow(e.data.payload);
@@ -709,6 +776,70 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
                 window.showLibraryToast('success', e.data.payload?.message || 'Recurso actualizado.');
             }
         }
+        if (e.data?.type === 'resource-type-created') {
+            const now = Date.now();
+            const lastReload = Number(sessionStorage.getItem(createReloadGuardKey) || '0');
+            if (now - lastReload < 4000) {
+                closeEditModal();
+                return;
+            }
+
+            sessionStorage.setItem(createReloadGuardKey, String(now));
+            closeEditModal();
+            if (typeof window.showLibraryToast === 'function') {
+                window.showLibraryToast('success', e.data?.payload?.message || 'Recurso registrado correctamente.');
+            }
+            window.location.reload();
+        }
+    });
+
+    // ── Delete modal ─────────────────────────────────────────────
+    const deleteModal = document.getElementById('type-delete-modal');
+    const deleteSubtitle = document.getElementById('type-delete-modal-subtitle');
+    const deleteCancel = document.getElementById('type-delete-modal-cancel');
+    const deleteConfirm = document.getElementById('type-delete-modal-confirm');
+    let deleteTargetForm = null;
+
+    const openDeleteModal = (form, title) => {
+        if (!deleteModal) return;
+        deleteTargetForm = form;
+        if (deleteSubtitle) {
+            deleteSubtitle.textContent = title || 'Recurso';
+        }
+        deleteModal.classList.remove('hidden');
+        deleteModal.setAttribute('aria-hidden', 'false');
+    };
+
+    const closeDeleteModal = () => {
+        if (!deleteModal) return;
+        deleteModal.classList.add('hidden');
+        deleteModal.setAttribute('aria-hidden', 'true');
+        deleteTargetForm = null;
+        if (deleteConfirm) {
+            deleteConfirm.disabled = false;
+            deleteConfirm.classList.remove('opacity-60', 'cursor-not-allowed');
+        }
+    };
+
+    document.querySelectorAll('.js-open-delete-resource-modal').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+            const button = e.currentTarget;
+            const form = button.closest('form.js-delete-resource-form');
+            if (!form) return;
+            openDeleteModal(form, button.dataset.resourceTitle || form.dataset.resourceTitle || 'Recurso');
+        });
+    });
+
+    document.querySelectorAll('[data-close-type-delete-modal]').forEach((btn) => {
+        btn.addEventListener('click', closeDeleteModal);
+    });
+    deleteCancel?.addEventListener('click', closeDeleteModal);
+
+    deleteConfirm?.addEventListener('click', () => {
+        if (!deleteTargetForm) return;
+        deleteConfirm.disabled = true;
+        deleteConfirm.classList.add('opacity-60', 'cursor-not-allowed');
+        deleteTargetForm.submit();
     });
 
     // ── Create wizard ────────────────────────────────────────────
@@ -720,16 +851,20 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
     const prevWizBtn     = document.getElementById('wizard-prev-btn');
     const nextWizBtn     = document.getElementById('wizard-next-btn');
     const submitWizBtn   = document.getElementById('wizard-submit-btn');
-    const panels         = Array.from(document.querySelectorAll('[data-wizard-panel]'));
-    const stepNums       = Array.from(document.querySelectorAll('[data-step-num]'));
+    const panels         = Array.from(wizardForm?.querySelectorAll('[data-wizard-panel]') || []);
     const TOTAL_STEPS    = panels.length;
     let wizardStep       = 0;
 
+    if (!wizardModal || !wizardForm || !prevWizBtn || !nextWizBtn || !submitWizBtn || TOTAL_STEPS === 0) {
+        return;
+    }
+
     const updateWizardUI = () => {
+        wizardStep = Math.max(0, Math.min(wizardStep, TOTAL_STEPS - 1));
         panels.forEach((p, i) => p.classList.toggle('hidden', i !== wizardStep));
 
         // Step indicators
-        document.querySelectorAll('.wizard-step-num[data-step-num]').forEach(el => {
+        wizardModal.querySelectorAll('.wizard-step-num[data-step-num]').forEach(el => {
             const n = Number(el.dataset.stepNum);
             el.classList.toggle('border-primary', n <= wizardStep);
             el.classList.toggle('bg-primary', n < wizardStep);
@@ -740,18 +875,33 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
         });
 
         // Hide Anterior on first step, show on all others
-        prevWizBtn.classList.toggle('invisible', wizardStep === 0);
-        prevWizBtn.classList.toggle('pointer-events-none', wizardStep === 0);
+        if (wizardStep === 0) {
+            prevWizBtn.classList.add('invisible', 'pointer-events-none');
+        } else {
+            prevWizBtn.classList.remove('invisible', 'pointer-events-none');
+        }
 
         const isLast = wizardStep === TOTAL_STEPS - 1;
-        nextWizBtn.classList.toggle('hidden', isLast);
-        submitWizBtn.classList.toggle('hidden', !isLast);
+        if (isLast) {
+            nextWizBtn.classList.add('hidden');
+            nextWizBtn.classList.remove('inline-flex');
+            nextWizBtn.disabled = true;
+            submitWizBtn.classList.remove('hidden');
+            submitWizBtn.classList.add('inline-flex');
+            submitWizBtn.disabled = false;
+        } else {
+            nextWizBtn.classList.remove('hidden');
+            nextWizBtn.classList.add('inline-flex');
+            nextWizBtn.disabled = false;
+            submitWizBtn.classList.add('hidden');
+            submitWizBtn.classList.remove('inline-flex');
+            submitWizBtn.disabled = true;
+        }
     };
 
     const openWizard = () => {
-        if (!wizardModal) return;
         wizardStep = 0;
-        wizardForm?.reset();
+        wizardForm.reset();
         // Reset cover preview
         if (typeCoverPreview) typeCoverPreview.classList.add('hidden');
         if (typeCoverImg) typeCoverImg.src = '';
@@ -761,7 +911,6 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
         document.body.classList.add('overflow-hidden');
     };
     const closeWizard = () => {
-        if (!wizardModal) return;
         wizardModal.classList.add('hidden');
         wizardModal.setAttribute('aria-hidden', 'true');
         document.body.classList.remove('overflow-hidden');
@@ -779,6 +928,31 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
         if (invalid) { invalid.focus(); invalid.reportValidity(); return; }
         if (wizardStep < TOTAL_STEPS - 1) { wizardStep++; updateWizardUI(); }
     });
+
+    wizardForm?.addEventListener('submit', (e) => {
+        const invalidField = wizardForm.querySelector(':invalid');
+        if (!invalidField || !(invalidField instanceof HTMLElement)) {
+            return;
+        }
+
+        e.preventDefault();
+        const panel = invalidField.closest('[data-wizard-panel]');
+        if (panel && panel instanceof HTMLElement) {
+            const targetStep = Number(panel.dataset.wizardPanel ?? '0');
+            if (!Number.isNaN(targetStep)) {
+                wizardStep = targetStep;
+                updateWizardUI();
+            }
+        }
+
+        requestAnimationFrame(() => {
+            invalidField.focus();
+            if ('reportValidity' in invalidField) {
+                invalidField.reportValidity();
+            }
+        });
+    });
+
     prevWizBtn?.addEventListener('click', () => {
         if (wizardStep > 0) { wizardStep--; updateWizardUI(); }
     });

@@ -399,6 +399,33 @@ document.addEventListener("DOMContentLoaded", function () {
             return Response::html('<h1>Libro no encontrado</h1>', 404);
         }
 
+        $canReadDigital = false;
+        if (($book['support_type'] ?? '') === 'digital' && $authUser !== null) {
+            $reservationCheck = $this->db->prepare(
+                "SELECT id
+                 FROM reservations
+                 WHERE resource_id = ?
+                   AND user_id = ?
+                   AND status IN ('waiting', 'notified', 'fulfilled')
+                 LIMIT 1"
+            );
+            $reservationCheck->execute([(int) $book['id'], (int) $authUser['id']]);
+                        $hasReservation = (bool) $reservationCheck->fetch();
+
+                        $loanCheck = $this->db->prepare(
+                                "SELECT id
+                                 FROM loans
+                                 WHERE resource_id = ?
+                                     AND user_id = ?
+                                     AND status IN ('active','overdue')
+                                 LIMIT 1"
+                        );
+                        $loanCheck->execute([(int) $book['id'], (int) $authUser['id']]);
+                        $hasActiveLoan = (bool) $loanCheck->fetch();
+
+                        $canReadDigital = $hasReservation || $hasActiveLoan;
+        }
+
         // Loan count (all time)
         $stmtLoans = $this->db->prepare("SELECT COUNT(*) FROM loans WHERE resource_id = ?");
         $stmtLoans->execute([$id]);
@@ -433,6 +460,7 @@ document.addEventListener("DOMContentLoaded", function () {
             'loanCount'    => $loanCount,
             'relatedBooks' => $relatedBooks,
             'queueSize'    => $queueSize,
+            'canReadDigital' => $canReadDigital,
         ]);
 
         return Response::html($html);

@@ -298,6 +298,51 @@ final class AdminController extends BaseController
             Session::destroy();
             return Response::redirect(BASE_URL . '/login');
         }
+        return Response::redirect(BASE_URL . '/admin/settings/library');
+    }
+
+    public function settingsLibrary(Request $request): Response
+    {
+        return $this->renderSettingsSection('library');
+    }
+
+    public function settingsLoans(Request $request): Response
+    {
+        return $this->renderSettingsSection('loans');
+    }
+
+    public function settingsFines(Request $request): Response
+    {
+        return $this->renderSettingsSection('fines');
+    }
+
+    public function settingsNotifications(Request $request): Response
+    {
+        return $this->renderSettingsSection('notifications');
+    }
+
+    public function settingsSmtp(Request $request): Response
+    {
+        return $this->renderSettingsSection('smtp');
+    }
+
+    public function settingsAbout(Request $request): Response
+    {
+        return $this->renderSettingsSection('about');
+    }
+
+    public function settingsSystem(Request $request): Response
+    {
+        return $this->renderSettingsSection('system');
+    }
+
+    private function renderSettingsSection(string $section): Response
+    {
+        $authUser = $this->resolveAuthUser();
+        if ($authUser === null) {
+            Session::destroy();
+            return Response::redirect(BASE_URL . '/login');
+        }
 
         $this->ensureSmtpSettings();
         $this->ensureAboutSettings();
@@ -307,15 +352,15 @@ final class AdminController extends BaseController
             ->query('SELECT `key`, value, type FROM system_settings ORDER BY `key`')
             ->fetchAll();
 
-        $activeTab = trim((string) $request->get('tab', ''));
+        $activeSection = $this->normalizeSettingsSection($section);
 
-        return Response::html($this->view->render('admin/settings/index', [
+        return Response::html($this->view->render('admin/settings/' . $activeSection, [
             'title' => 'Configuracion - ' . ($settings['library_name'] ?? 'Biblioteca'),
             'settings' => $settings,
             'auth_user' => $authUser,
             'all_settings' => $allSettings,
             'csrf' => \Middleware\CsrfMiddleware::token(),
-            'active_tab' => $activeTab,
+            'active_section' => $activeSection,
         ], 'layouts/panel'));
     }
 
@@ -343,8 +388,8 @@ final class AdminController extends BaseController
             }
         }
 
-        $requestedTab = trim((string) $request->post('active_tab', ''));
-        $tabQuery = static fn(string $tab): string => $tab !== '' ? ('?tab=' . rawurlencode($tab)) : '';
+        $requestedTab = $this->normalizeSettingsSection((string) $request->post('active_tab', ''));
+        $sectionPath = fn(string $tab): string => BASE_URL . '/admin/settings/' . $this->normalizeSettingsSection($tab);
 
         $sectionKey = trim((string) $request->post('section_key', ''));
         if ($sectionKey !== '') {
@@ -362,7 +407,7 @@ final class AdminController extends BaseController
 
             if ($sectionKeys === []) {
                 Session::flash('error', 'No se encontraron configuraciones para la seccion seleccionada.');
-                return Response::redirect(BASE_URL . '/admin/settings' . $tabQuery($sectionKey));
+                return Response::redirect($sectionPath($sectionKey));
             }
 
             $placeholders = implode(',', array_fill(0, count($sectionKeys), '?'));
@@ -392,7 +437,7 @@ final class AdminController extends BaseController
             }
 
             Session::flash('success', 'Seccion actualizada correctamente.');
-            return Response::redirect(BASE_URL . '/admin/settings' . $tabQuery($sectionKey));
+            return Response::redirect($sectionPath($sectionKey));
         }
 
         $singleKey = trim((string) $request->post('single_key', ''));
@@ -418,11 +463,11 @@ final class AdminController extends BaseController
                 $stmt->execute([$value, $key]);
 
                 Session::flash('success', 'Configuracion actualizada correctamente.');
-                return Response::redirect(BASE_URL . '/admin/settings' . $tabQuery($requestedTab));
+                return Response::redirect($sectionPath($requestedTab));
             }
 
             Session::flash('error', 'No se encontro la configuracion solicitada.');
-            return Response::redirect(BASE_URL . '/admin/settings' . $tabQuery($requestedTab));
+            return Response::redirect($sectionPath($requestedTab));
         }
 
         $rows = $this->db
@@ -451,7 +496,14 @@ final class AdminController extends BaseController
         }
 
         Session::flash('success', 'Configuracion actualizada correctamente.');
-        return Response::redirect(BASE_URL . '/admin/settings' . $tabQuery($requestedTab));
+        return Response::redirect($sectionPath($requestedTab));
+    }
+
+    private function normalizeSettingsSection(string $section): string
+    {
+        $allowed = ['library', 'loans', 'fines', 'notifications', 'smtp', 'about', 'system'];
+        $section = trim($section);
+        return in_array($section, $allowed, true) ? $section : 'library';
     }
 
     public function categories(Request $request): Response

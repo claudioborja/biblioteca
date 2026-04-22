@@ -1,3 +1,3 @@
 <?php
-$current_section = 'library';
+$current_section = 'notifications';
 require __DIR__ . '/_section.php';

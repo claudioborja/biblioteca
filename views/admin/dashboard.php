@@ -21,7 +21,7 @@ $loansData    = array_values($loans_chart ?? []);
 $typeLabels = [
     'physical' => 'Libros físicos',
     'digital'  => 'Libros digitales',
-    'journal'  => 'Revistas / Artículos',
+    'journal'  => 'Revistas',
     'thesis'   => 'Tesis',
     'other'    => 'Otros',
 ];
@@ -177,6 +177,32 @@ $csrfToken = (string) \Core\Session::get('_csrf_token', '');
         </p>
     </div>
 
+    <?php if ($types !== []): ?>
+    <div class="grid gap-2 sm:grid-cols-3 lg:grid-cols-5 dash-fade-up dash-delay-2">
+        <?php foreach ($types as $type):
+            $count    = (int)($type['resources_count'] ?? 0);
+            $slug     = strtolower(trim((string)($type['resource_type'] ?? 'other')));
+            $label    = $typeLabels[$slug] ?? ucfirst($slug);
+            $iconPath = $typeIcons[$slug] ?? $typeIcons['other'];
+            $color    = $typeColors[$slug] ?? $typeColors['other'];
+            $crudSlug = $typeCrudSlugMap[$slug] ?? null;
+            $href     = $crudSlug ? BASE_URL . '/admin/resources/type/' . rawurlencode($crudSlug) : BASE_URL . '/admin/resources';
+        ?>
+        <a href="<?= $e($href) ?>"
+           class="group flex items-center gap-3 rounded-xl border border-outline-variant/60 bg-white p-3.5 shadow-ambient transition-all duration-150 hover:-translate-y-0.5 hover:shadow-ambient-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
+            <span class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg transition-colors duration-150"
+                  style="background:<?= $e($color['light']) ?>; color:<?= $e($color['bg']) ?>">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><?= $iconPath ?></svg>
+            </span>
+            <div class="min-w-0">
+                <p class="truncate text-[10px] font-semibold uppercase tracking-wide text-on-surface-subtle"><?= $e($label) ?></p>
+                <p class="font-display text-xl font-extrabold leading-none text-on-surface"><?= number_format($count) ?></p>
+            </div>
+        </a>
+        <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
+
     <div class="grid gap-4 lg:grid-cols-2">
         <div class="rounded-2xl border border-outline-variant/60 bg-white p-5 shadow-ambient dash-fade-up dash-delay-2">
             <div class="mb-4 flex items-center justify-between">
@@ -257,81 +283,6 @@ $csrfToken = (string) \Core\Session::get('_csrf_token', '');
         </div>
     </div>
 
-    <div class="rounded-2xl border border-outline-variant/60 bg-white p-5 shadow-ambient dash-fade-up dash-delay-3">
-        <h2 class="mb-4 text-sm font-semibold text-on-surface">Colección por tipo</h2>
-        <?php if ($types !== []): ?>
-            <div class="mb-4 h-auto min-h-64 w-full">
-                <canvas id="chart-types"></canvas>
-            </div>
-        <?php else: ?>
-            <p class="text-sm text-on-surface-subtle">Sin recursos registrados.</p>
-        <?php endif; ?>
-    </div>
-
-    <?php if ($types !== []): ?>
-    <div class="grid gap-2 sm:grid-cols-3 lg:grid-cols-5 dash-fade-up dash-delay-4">
-        <?php foreach ($types as $type):
-            $count    = (int)($type['resources_count'] ?? 0);
-            $slug     = strtolower(trim((string)($type['resource_type'] ?? 'other')));
-            $label    = $typeLabels[$slug] ?? ucfirst($slug);
-            $iconPath = $typeIcons[$slug] ?? $typeIcons['other'];
-            $color    = $typeColors[$slug] ?? $typeColors['other'];
-            $crudSlug = $typeCrudSlugMap[$slug] ?? null;
-            $href     = $crudSlug ? BASE_URL . '/admin/resources/type/' . rawurlencode($crudSlug) : BASE_URL . '/admin/resources';
-        ?>
-        <a href="<?= $e($href) ?>"
-           class="group flex items-center gap-3 rounded-xl border border-outline-variant/60 bg-white p-3.5 shadow-ambient transition-all duration-150 hover:-translate-y-0.5 hover:shadow-ambient-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
-            <span class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg transition-colors duration-150"
-                  style="background:<?= $e($color['light']) ?>; color:<?= $e($color['bg']) ?>">
-                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><?= $iconPath ?></svg>
-            </span>
-            <div class="min-w-0">
-                <p class="truncate text-[10px] font-semibold uppercase tracking-wide text-on-surface-subtle"><?= $e($label) ?></p>
-                <p class="font-display text-xl font-extrabold leading-none text-on-surface"><?= number_format($count) ?></p>
-            </div>
-        </a>
-        <?php endforeach; ?>
-    </div>
-    <?php endif; ?>
-
-    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 dash-fade-up dash-delay-5">
-        <div class="rounded-xl border border-outline-variant/60 bg-white px-4 py-3 shadow-ambient flex items-center gap-3">
-            <span class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-red-50 text-red-600">
-                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
-            </span>
-            <div>
-                <p class="text-[10px] font-semibold uppercase tracking-wide text-on-surface-subtle">Vencidos</p>
-                <p class="text-xl font-extrabold font-display text-red-600"><?= number_format((int)($loanStats['overdue_loans'] ?? 0)) ?></p>
-            </div>
-        </div>
-        <div class="rounded-xl border border-outline-variant/60 bg-white px-4 py-3 shadow-ambient flex items-center gap-3">
-            <span class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-orange-50 text-orange-600">
-                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75"/></svg>
-            </span>
-            <div>
-                <p class="text-[10px] font-semibold uppercase tracking-wide text-on-surface-subtle">Multas pendientes</p>
-                <p class="text-xl font-extrabold font-display text-orange-600">$<?= number_format((float)($fineStats['pending_amount'] ?? 0), 2) ?></p>
-            </div>
-        </div>
-        <div class="rounded-xl border border-outline-variant/60 bg-white px-4 py-3 shadow-ambient flex items-center gap-3">
-            <span class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
-                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z"/></svg>
-            </span>
-            <div>
-                <p class="text-[10px] font-semibold uppercase tracking-wide text-on-surface-subtle">Socios</p>
-                <p class="text-xl font-extrabold font-display text-on-surface"><?= number_format((int)($userStats['member_users'] ?? 0)) ?></p>
-            </div>
-        </div>
-        <div class="rounded-xl border border-outline-variant/60 bg-white px-4 py-3 shadow-ambient flex items-center gap-3">
-            <span class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
-                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M4.26 10.147a60.436 60.436 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347m-15.482 0a50.57 50.57 0 00-2.658-.813A59.905 59.905 0 0112 3.493a59.902 59.902 0 0110.399 5.84c-.896.248-1.783.52-2.658.814m-15.482 0A50.697 50.697 0 0112 13.489a50.702 50.702 0 017.74-3.342M6.75 15a.75.75 0 100-1.5.75.75 0 000 1.5zm0 0v-3.675A55.378 55.378 0 0112 8.443m-7.007 11.55A5.981 5.981 0 006.75 15.75v-1.5"/></svg>
-            </span>
-            <div>
-                <p class="text-[10px] font-semibold uppercase tracking-wide text-on-surface-subtle">Docentes</p>
-                <p class="text-xl font-extrabold font-display text-indigo-600"><?= number_format((int)($userStats['teacher_users'] ?? 0)) ?></p>
-            </div>
-        </div>
-    </div>
 </section>
 
 <?php if (($auth_user['role'] ?? '') === 'admin'): ?>
@@ -623,48 +574,5 @@ $csrfToken = (string) \Core\Session::get('_csrf_token', '');
         }
     });
 
-    // ── Gráfico barras horizontales tipos ────────────────────────────────────────────────
-    <?php if ($types !== []): ?>
-    const typesData = <?= json_encode(array_map(fn($t) => (int)($t['resources_count'] ?? 0), $types)) ?>;
-    const typesTotalResources = <?= (int)$totalResources ?>;
-    const typesPercentages = typesData.map(v => v > 0 ? Math.round((v / typesTotalResources) * 100) : 0);
-    const typesMaxValue = Math.max(...typesData);
-    const typesThreshold = typesMaxValue * 0.15; // Si es <15% del máximo, mostrar en un lado
-    
-    new Chart(document.getElementById('chart-types'), {
-        type: 'bar',
-        data: {
-            labels: <?= json_encode(array_map(fn($t) => $typeLabels[strtolower(trim((string)($t['resource_type'] ?? 'other')))] ?? 'Otro', $types)) ?>,
-            datasets: [{
-                data: typesData,
-                backgroundColor: <?= json_encode(array_map(fn($t) => $typeColors[strtolower(trim((string)($t['resource_type'] ?? 'other')))]['bg'] ?? '#6b7280', $types)) ?>,
-                borderWidth: 0,
-                borderRadius: 6
-            }]
-        },
-        options: {
-            indexAxis: 'y',
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { display: false },
-                tooltip: sharedTooltip,
-                datalabels: {
-                    display: true,
-                    anchor: (context) => context.dataset.data[context.dataIndex] > typesThreshold ? 'center' : 'end',
-                    align: (context) => context.dataset.data[context.dataIndex] > typesThreshold ? 'center' : 'right',
-                    offset: (context) => context.dataset.data[context.dataIndex] > typesThreshold ? 0 : 8,
-                    font: { size: 13, weight: 'bold' },
-                    color: (context) => context.dataset.data[context.dataIndex] > typesThreshold ? '#ffffff' : '#6b7280',
-                    formatter: (value, context) => value + ' (' + typesPercentages[context.dataIndex] + '%)',
-                }
-            },
-            scales: {
-                x: { beginAtZero: true, grid: { color: gridColor }, ticks: { font, precision: 0 } },
-                y: { grid: { display: false }, ticks: { font } }
-            }
-        }
-    });
-    <?php endif; ?>
 })();
 </script>

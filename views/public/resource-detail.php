@@ -19,7 +19,7 @@ $currency   = $settings['currency_symbol'] ?? '$';
 $resourceTypeLabels = [
     'book' => 'Libro',
     'ebook' => 'Libro digital',
-    'journal'     => 'Revista / Artículo',
+    'journal'     => 'Revista',
     'thesis'      => 'Tesis',
     'map'         => 'Otro',
     'score'       => 'Otro',
@@ -31,7 +31,7 @@ $resourceTypeLabels = [
 $supportTypeLabels = [
     'physical' => 'Físico',
     'digital'  => 'Digital',
-    'journal'  => 'Revista / Artículo',
+    'journal'  => 'Revista',
     'thesis'   => 'Tesis',
     'other'    => 'Otro',
 ];
@@ -103,7 +103,7 @@ $fmtDateTime = static fn(?string $date): string => ($date !== null && $date !== 
                 <?php if ($isDigital): ?>
                     <div class="flex items-center gap-2 px-4 py-2.5 bg-primary/8 text-primary rounded-[0.5rem] text-sm font-medium w-full justify-center">
                         <svg class="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                        Acceso digital disponible
+                        Acceso digital con reserva
                     </div>
                 <?php elseif ($available > 0): ?>
                     <div class="flex items-center gap-2 px-4 py-2.5 bg-[#14a085]/10 text-[#14a085] rounded-[0.5rem] text-sm font-medium w-full justify-center">
@@ -122,11 +122,28 @@ $fmtDateTime = static fn(?string $date): string => ($date !== null && $date !== 
 
                 <!-- CTA Buttons -->
                 <div class="flex flex-col gap-2.5 w-full">
-                    <?php if ($isDigital && !empty($book['digital_url'])): ?>
-                        <a href="<?= View::e($book['digital_url']) ?>" target="_blank" rel="noopener"
+                    <?php if ($isDigital && !empty($book['digital_url']) && !empty($auth_user) && !empty($canReadDigital)): ?>
+                        <a href="<?= BASE_URL ?>/account/digital-resources/<?= (int) ($book['id'] ?? 0) ?>/read" target="_blank" rel="noopener"
                            class="flex items-center justify-center gap-2 w-full px-5 py-3 gradient-scholar text-on-primary font-semibold rounded-[0.5rem] hover:opacity-90 transition-opacity text-sm">
                             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25"/></svg>
-                            Leer en línea
+                            Leer PDF
+                        </a>
+                    <?php elseif ($isDigital && !empty($book['digital_url']) && !empty($auth_user)): ?>
+                        <form method="POST" action="<?= BASE_URL ?>/account/reservations" class="w-full">
+                            <input type="hidden" name="_csrf_token" value="<?= View::e((string) \Core\Session::get('_csrf_token', '')) ?>">
+                            <input type="hidden" name="resource_id" value="<?= (int) ($book['id'] ?? 0) ?>">
+                            <input type="hidden" name="redirect" value="<?= View::e('/catalog/' . (int) ($book['id'] ?? 0)) ?>">
+                            <button type="submit"
+                                    class="flex items-center justify-center gap-2 w-full px-5 py-3 gradient-scholar text-on-primary font-semibold rounded-[0.5rem] hover:opacity-90 transition-opacity text-sm">
+                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+                                Reservar para leer
+                            </button>
+                        </form>
+                    <?php elseif ($isDigital && !empty($book['digital_url'])): ?>
+                        <a href="<?= BASE_URL ?>/login"
+                           class="flex items-center justify-center gap-2 w-full px-5 py-3 gradient-scholar text-on-primary font-semibold rounded-[0.5rem] hover:opacity-90 transition-opacity text-sm">
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25m0 0H12m3.75 0L9 12m0 0 6.75 6.75M9 12H3"/></svg>
+                            Inicia sesión para reservar y leer
                         </a>
                     <?php elseif ($available > 0): ?>
                         <?php if (!empty($auth_user)): ?>

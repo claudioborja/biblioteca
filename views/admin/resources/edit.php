@@ -205,7 +205,7 @@ $isModal = isset($_GET['modal']) && $_GET['modal'] === '1';
                         <select id="resource_type" name="resource_type" class="mt-1 w-full rounded-xl border border-outline-variant bg-surface-container-lowest px-3 py-2.5 text-sm focus:border-primary focus:outline-none">
                             <option value="book" <?= ($old['resource_type'] ?? 'book') === 'book' ? 'selected' : '' ?>>Libro físico</option>
                             <option value="ebook" <?= ($old['resource_type'] ?? '') === 'ebook' ? 'selected' : '' ?>>Libro digital</option>
-                            <option value="journal" <?= ($old['resource_type'] ?? '') === 'journal' ? 'selected' : '' ?>>Revista / Artículo</option>
+                            <option value="journal" <?= ($old['resource_type'] ?? '') === 'journal' ? 'selected' : '' ?>>Revista</option>
                             <option value="thesis" <?= ($old['resource_type'] ?? '') === 'thesis' ? 'selected' : '' ?>>Tesis</option>
                             <option value="other" <?= ($old['resource_type'] ?? '') === 'other' ? 'selected' : '' ?>>Otro</option>
                         </select>

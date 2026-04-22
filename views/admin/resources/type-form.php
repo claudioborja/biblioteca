@@ -188,6 +188,22 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
                         </div>
                     </div>
                     <?php endif; ?>
+
+                    <?php if ($type === 'ebook'): ?>
+                    <div class="xl:col-span-3">
+                        <label class="label-sm">Archivo PDF del libro digital <span class="text-red-500">*</span></label>
+                        <?php if ($is_edit && $val('digital_url') !== ''): ?>
+                        <input type="hidden" name="existing_digital_url" value="<?= $val('digital_url') ?>">
+                        <div class="mb-2 flex items-center gap-2 rounded-xl border border-outline-variant bg-surface-container-lowest p-2">
+                            <i class="bi bi-file-earmark-pdf text-red-600"></i>
+                            <span class="text-xs text-on-surface-muted truncate"><?= $val('digital_url') ?></span>
+                        </div>
+                        <?php endif; ?>
+                        <input type="file" name="digital_pdf" accept="application/pdf,.pdf" <?= $is_edit ? '' : 'required' ?>
+                               class="mt-1 w-full rounded-xl border border-outline-variant bg-surface-container-lowest px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-primary hover:file:bg-primary/20 focus:border-primary focus:outline-none">
+                        <p class="mt-1 text-xs text-on-surface-muted"><?= $is_edit ? 'Si no cargas un nuevo PDF, se conserva el archivo actual. ' : '' ?>Formato PDF, máximo 50 MB.</p>
+                    </div>
+                    <?php endif; ?>
                 </div>
             </section>
 
@@ -224,7 +240,7 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
                         </select>
                     </div>
                     <?php endif; ?>
-                    <?php if ($is_edit): ?>
+                    <?php if ($is_edit && !$isModal): ?>
                     <div>
                         <label class="label-sm">Estado del recurso</label>
                         <select name="is_active" class="<?= $inputClass ?>">
@@ -257,7 +273,7 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
                                class="<?= $inputClass ?>" min="0"
                                <?= $cfg['copies_required'] ? 'required' : '' ?>>
                     </div>
-                    <?php if ($is_edit): ?>
+                    <?php if ($is_edit && !$isModal): ?>
                     <div>
                         <label class="label-sm">Disponibles</label>
                         <input type="number" name="available_copies" value="<?= $val('available_copies') ?>"

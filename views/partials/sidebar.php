@@ -24,7 +24,15 @@
 
         <?php if ($role === 'admin'): ?>
             <p class="px-3 py-2 mt-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Sistema</p>
-            <a href="<?= BASE_URL ?>/admin/settings" class="block px-3 py-2 rounded <?= $isActive('/admin/settings') ?>">Configuración</a>
+            <p class="px-3 py-1 text-[11px] font-semibold text-gray-400">Configuración</p>
+            <a href="<?= BASE_URL ?>/admin/settings/library" class="block px-3 py-2 rounded <?= $isActive('/admin/settings/library') ?>">Biblioteca</a>
+            <a href="<?= BASE_URL ?>/admin/settings/loans" class="block px-3 py-2 rounded <?= $isActive('/admin/settings/loans') ?>">Préstamos</a>
+            <a href="<?= BASE_URL ?>/admin/settings/fines" class="block px-3 py-2 rounded <?= $isActive('/admin/settings/fines') ?>">Multas</a>
+            <a href="<?= BASE_URL ?>/admin/settings/notifications" class="block px-3 py-2 rounded <?= $isActive('/admin/settings/notifications') ?>">Comunicación</a>
+            <a href="<?= BASE_URL ?>/admin/settings/smtp" class="block px-3 py-2 rounded <?= $isActive('/admin/settings/smtp') ?>">Correo SMTP</a>
+            <a href="<?= BASE_URL ?>/admin/settings/about" class="block px-3 py-2 rounded <?= $isActive('/admin/settings/about') ?>">Página About</a>
+            <a href="<?= BASE_URL ?>/admin/settings/system" class="block px-3 py-2 rounded <?= $isActive('/admin/settings/system') ?>">Sistema</a>
+            <a href="<?= BASE_URL ?>/admin/settings/mail-queue" class="block px-3 py-2 rounded <?= $isActive('/admin/settings/mail-queue') ?>">Cola de correo</a>
             <a href="<?= BASE_URL ?>/admin/audit" class="block px-3 py-2 rounded <?= $isActive('/admin/audit') ?>">Auditoría</a>
         <?php endif; ?>
 

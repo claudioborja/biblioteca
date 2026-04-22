@@ -83,6 +83,7 @@ final class LoanController extends BaseController
             "SELECT
                 l.id,
                 l.user_id,
+                                l.resource_id,
                 l.loan_at,
                 l.due_at,
                 l.returned_at,
@@ -91,7 +92,9 @@ final class LoanController extends BaseController
                 l.notes,
                 b.title AS book_title,
                 b.authors AS book_authors,
-                b.cover_image
+                                b.cover_image,
+                                b.support_type,
+                                b.digital_url
              FROM loans l
              JOIN resources b ON b.id = l.resource_id
                WHERE l.user_id = :user_id
@@ -196,9 +199,18 @@ final class LoanController extends BaseController
             return Response::redirect(BASE_URL . '/login');
         }
 
+        $isModal = $request->get('modal', '') === '1';
+        if ($isModal && $request->get('saved', '') === '1') {
+            $payload = Session::getFlash('loan_create_payload', null);
+            $jsonPayload = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            return Response::html(
+                '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Guardado</title></head><body><script>window.parent.postMessage({type:"loan-create-saved",payload:' . ($jsonPayload ?: 'null') . '},"*");</script></body></html>'
+            );
+        }
+
         $settings = $this->panelSettings();
 
-        // Load users and available physical resources for the form selects
+        // Load users and available resources for the form selects
         $users = $this->db->query(
             "SELECT id, name, email, user_number, status
              FROM users
@@ -207,9 +219,9 @@ final class LoanController extends BaseController
         )->fetchAll();
 
         $resources = $this->db->query(
-            "SELECT id, title, authors, isbn, available_copies, branch_id
+            "SELECT id, title, authors, isbn_13 AS isbn, available_copies, branch_id, support_type, digital_url
              FROM resources
-             WHERE type = 'physical' AND is_active = 1 AND available_copies > 0
+             WHERE is_active = 1
              ORDER BY title ASC"
         )->fetchAll();
 
@@ -230,7 +242,7 @@ final class LoanController extends BaseController
             'csrf'      => (string) Session::get('_csrf_token', ''),
             'old'       => [],
             'errors'    => [],
-        ], 'layouts/panel'));
+        ], $isModal ? 'layouts/modal' : 'layouts/panel'));
     }
 
     public function store(Request $request): Response
@@ -241,11 +253,14 @@ final class LoanController extends BaseController
             return Response::redirect(BASE_URL . '/login');
         }
 
+        $isModalRequest = $request->post('modal', '') === '1' || $request->get('modal', '') === '1';
+        $createUrl = BASE_URL . '/admin/loans/create' . ($isModalRequest ? '?modal=1' : '');
+
         // CSRF
         $csrf = (string) $request->post('_csrf_token', '');
         if (!hash_equals((string) Session::get('_csrf_token', ''), $csrf)) {
             Session::flash('error', 'Token de seguridad inválido. Intenta de nuevo.');
-            return Response::redirect(BASE_URL . '/admin/loans/create');
+            return Response::redirect($createUrl);
         }
 
         $userId     = (int) $request->post('user_id', 0);
@@ -258,7 +273,7 @@ final class LoanController extends BaseController
 
         if (!empty($errors)) {
             Session::flash('error', implode(' ', $errors));
-            return Response::redirect(BASE_URL . '/admin/loans/create');
+            return Response::redirect($createUrl);
         }
 
         // Load settings
@@ -270,6 +285,39 @@ final class LoanController extends BaseController
         $loanHours      = max(1, (int) ($settingsMap['loan_hours'] ?? 72));
         $maxLoans       = max(1, (int) ($settingsMap['max_loans_per_user'] ?? 3));
         $blockWithFines = ((string) ($settingsMap['block_loans_with_fines'] ?? 'true')) === 'true';
+        $durationOption = trim((string) $request->post('duration_option', 'system'));
+        $dueAtManualRaw = trim((string) $request->post('due_at_manual', ''));
+
+        $allowedHourOptions = [24, 48, 72, 96, 168];
+        $now = new \DateTimeImmutable('now');
+        $effectiveLoanHours = $loanHours;
+        $dueAt = $now->modify('+' . $loanHours . ' hours');
+        $usesManualDueAt = false;
+
+        if ($durationOption === 'manual') {
+            $dueAtManual = \DateTimeImmutable::createFromFormat('Y-m-d\TH:i', $dueAtManualRaw);
+            if ($dueAtManual === false) {
+                Session::flash('error', 'La fecha manual de devolución no es válida.');
+                return Response::redirect($createUrl);
+            }
+            if ($dueAtManual <= $now) {
+                Session::flash('error', 'La fecha manual de devolución debe ser futura.');
+                return Response::redirect($createUrl);
+            }
+            $interval = $now->diff($dueAtManual);
+            $hoursFromNow = (int) ceil(($interval->days * 24) + $interval->h + ($interval->i / 60) + ($interval->s / 3600));
+            $effectiveLoanHours = max(1, $hoursFromNow);
+            $dueAt = $dueAtManual;
+            $usesManualDueAt = true;
+        } elseif ($durationOption !== 'system') {
+            $hoursOption = (int) $durationOption;
+            if (!in_array($hoursOption, $allowedHourOptions, true)) {
+                Session::flash('error', 'La duración seleccionada no es válida.');
+                return Response::redirect($createUrl);
+            }
+            $effectiveLoanHours = $hoursOption;
+            $dueAt = $now->modify('+' . $hoursOption . ' hours');
+        }
 
         // Validate user exists and is active
         $userStmt = $this->db->prepare(
@@ -280,26 +328,26 @@ final class LoanController extends BaseController
 
         if (!$user || (string) ($user['status'] ?? '') !== 'active') {
             Session::flash('error', 'El usuario no existe o no está activo.');
-            return Response::redirect(BASE_URL . '/admin/loans/create');
+            return Response::redirect($createUrl);
         }
 
-        // Validate resource exists, is physical, and has copies available
+        // Validate resource exists and is active
         $resStmt = $this->db->prepare(
-            "SELECT id, title, authors, available_copies, branch_id
+            "SELECT id, title, authors, available_copies, branch_id, support_type, digital_url
              FROM resources
-             WHERE id = ? AND type = 'physical' AND is_active = 1 LIMIT 1"
+             WHERE id = ? AND is_active = 1 LIMIT 1"
         );
         $resStmt->execute([$resourceId]);
         $resource = $resStmt->fetch();
 
         if (!$resource) {
-            Session::flash('error', 'El recurso no existe, no es físico o no está activo.');
-            return Response::redirect(BASE_URL . '/admin/loans/create');
+            Session::flash('error', 'El recurso no existe o no está activo.');
+            return Response::redirect($createUrl);
         }
 
         if ((int) ($resource['available_copies'] ?? 0) <= 0) {
             Session::flash('error', 'El recurso no tiene copias disponibles.');
-            return Response::redirect(BASE_URL . '/admin/loans/create');
+            return Response::redirect($createUrl);
         }
 
         // Validate user has no active overdue loans
@@ -310,7 +358,7 @@ final class LoanController extends BaseController
         $overdueStmt->execute([$userId]);
         if ((int) $overdueStmt->fetchColumn() > 0) {
             Session::flash('error', 'El usuario tiene préstamos vencidos sin devolver. Debe regularizarlos antes de un nuevo préstamo.');
-            return Response::redirect(BASE_URL . '/admin/loans/create');
+            return Response::redirect($createUrl);
         }
 
         // Validate concurrent loan limit
@@ -320,7 +368,7 @@ final class LoanController extends BaseController
         $activeStmt->execute([$userId]);
         if ((int) $activeStmt->fetchColumn() >= $maxLoans) {
             Session::flash('error', 'El usuario ya tiene ' . $maxLoans . ' préstamos activos (límite del sistema).');
-            return Response::redirect(BASE_URL . '/admin/loans/create');
+            return Response::redirect($createUrl);
         }
 
         // Validate no pending fines if blocking is enabled
@@ -333,7 +381,7 @@ final class LoanController extends BaseController
             $deuda = (float) $finesStmt->fetchColumn();
             if ($deuda > 0) {
                 Session::flash('error', sprintf('El usuario tiene multas pendientes por $%.2f. Debe saldarlas antes de un nuevo préstamo.', $deuda));
-                return Response::redirect(BASE_URL . '/admin/loans/create');
+                return Response::redirect($createUrl);
             }
         }
 
@@ -343,15 +391,15 @@ final class LoanController extends BaseController
             $insertStmt = $this->db->prepare(
                 "INSERT INTO loans
                  (resource_id, user_id, librarian_id, branch_id, loan_at, due_at, loan_hours_applied, renewals_count, status, notes, created_at)
-                 VALUES (?, ?, ?, ?, NOW(), DATE_ADD(NOW(), INTERVAL ? HOUR), ?, 0, 'active', ?, NOW())"
+                 VALUES (?, ?, ?, ?, NOW(), ?, ?, 0, 'active', ?, NOW())"
             );
             $insertStmt->execute([
                 $resourceId,
                 $userId,
                 (int) $authUser['id'],
                 $resource['branch_id'] ?? null,
-                $loanHours,
-                $loanHours,
+                $dueAt->format('Y-m-d H:i:s'),
+                $effectiveLoanHours,
                 $notes !== '' ? $notes : null,
             ]);
             $newLoanId = (int) $this->db->lastInsertId();
@@ -362,13 +410,22 @@ final class LoanController extends BaseController
 
             // Audit log
             $this->db->prepare(
-                "INSERT INTO audit_logs (user_id, action, table_name, record_id, description, created_at)
-                 VALUES (?, 'create', 'loans', ?, ?, NOW())"
+                "INSERT INTO audit_logs (user_id, action, entity_type, entity_id, old_values, new_values, ip_address, user_agent)
+                 VALUES (?, 'loan.create', 'loan', ?, NULL, ?, ?, ?)"
             )->execute([
                 (int) $authUser['id'],
                 $newLoanId,
-                sprintf('Préstamo manual creado para usuario #%d (%s), recurso #%d (%s), vence en %d horas.',
-                    $userId, $user['name'], $resourceId, $resource['title'], $loanHours),
+                json_encode([
+                    'user_id' => $userId,
+                    'user_name' => (string) ($user['name'] ?? ''),
+                    'resource_id' => $resourceId,
+                    'resource_title' => (string) ($resource['title'] ?? ''),
+                    'loan_hours' => $effectiveLoanHours,
+                    'due_at' => $dueAt->format('Y-m-d H:i:s'),
+                    'duration_mode' => $usesManualDueAt ? 'manual' : $durationOption,
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                (string) ($_SERVER['REMOTE_ADDR'] ?? 'cli'),
+                mb_substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? 'cli'), 0, 255),
             ]);
 
             $this->db->commit();
@@ -408,6 +465,14 @@ final class LoanController extends BaseController
             }
         } catch (\Throwable) {
             // Mail failure is non-blocking
+        }
+
+        if ($isModalRequest) {
+            Session::flash('loan_create_payload', [
+                'id' => $newLoanId,
+                'message' => 'Préstamo registrado correctamente.',
+            ]);
+            return Response::redirect(BASE_URL . '/admin/loans/create?modal=1&saved=1');
         }
 
         Session::flash('success', 'Préstamo registrado correctamente.');

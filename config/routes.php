@@ -46,6 +46,7 @@ $router->group(['prefix' => '/account', 'middleware' => ['auth']], function (Rou
     $router->get('/assignments', [Controllers\AssignmentController::class, 'myAssignments'], 'user.assignments');
     $router->get('/suggestions', [Controllers\SuggestionController::class, 'userIndex'], 'user.suggestions');
     $router->post('/suggestions', [Controllers\SuggestionController::class, 'userStore'], 'user.suggestion.store');
+    $router->get('/digital-resources/{id}/read', [Controllers\ResourceController::class, 'readDigitalResource'], 'user.digital.read');
 });
 
 // ─── Teacher Panel ──────────────────────────────────────────────────────────
@@ -89,6 +90,7 @@ $router->group(['prefix' => '/admin', 'middleware' => ['auth', 'role:admin,libra
     $router->post('/resources/type/{slug}', [Controllers\ResourceController::class, 'typeStore'], 'admin.resources.type.store');
     $router->get('/resources/type/{slug}/{id}/edit', [Controllers\ResourceController::class, 'typeEdit'], 'admin.resources.type.edit');
     $router->post('/resources/type/{slug}/{id}', [Controllers\ResourceController::class, 'typeUpdate'], 'admin.resources.type.update');
+    $router->post('/resources/type/{slug}/{id}/delete', [Controllers\ResourceController::class, 'typeDelete'], 'admin.resources.type.delete');
 
     // Loans
     $router->get('/loans', [Controllers\LoanController::class, 'index'], 'admin.loans');
@@ -100,6 +102,8 @@ $router->group(['prefix' => '/admin', 'middleware' => ['auth', 'role:admin,libra
 
     // Reservations
     $router->get('/reservations', [Controllers\ReservationController::class, 'index'], 'admin.reservations');
+    $router->get('/reservations/export/excel', [Controllers\ReservationController::class, 'exportExcel'], 'admin.reservations.export.excel');
+    $router->get('/reservations/export/pdf', [Controllers\ReservationController::class, 'exportPdf'], 'admin.reservations.export.pdf');
     $router->post('/reservations/{id}/convert', [Controllers\ReservationController::class, 'convertToLoan'], 'admin.reservation.convert');
     $router->post('/reservations/{id}/cancel', [Controllers\ReservationController::class, 'adminCancel'], 'admin.reservation.cancel');
 
@@ -157,6 +161,7 @@ $router->group(['prefix' => '/admin', 'middleware' => ['auth', 'role:admin,libra
     $router->get('/reports/visits', [Controllers\ReportController::class, 'visits'], 'admin.reports.visits');
     // Report exports
     $router->get('/reports/loans/export/csv', [Controllers\ReportController::class, 'exportLoansCsv'], 'admin.reports.loans.csv');
+    $router->get('/reports/loans/export/excel', [Controllers\ReportController::class, 'exportLoansExcel'], 'admin.reports.loans.excel');
     $router->get('/reports/loans/export/pdf', [Controllers\ReportController::class, 'exportLoansPdf'], 'admin.reports.loans.pdf');
     $router->get('/reports/inventory/export/csv', [Controllers\ReportController::class, 'exportInventoryCsv'], 'admin.reports.inventory.csv');
     $router->get('/reports/inventory/export/pdf', [Controllers\ReportController::class, 'exportInventoryPdf'], 'admin.reports.inventory.pdf');
@@ -177,6 +182,13 @@ $router->group(['prefix' => '/admin', 'middleware' => ['auth', 'role:admin,libra
 
     // Settings (Admin only)
     $router->get('/settings', [Controllers\AdminController::class, 'settings'], 'admin.settings');
+    $router->get('/settings/library', [Controllers\AdminController::class, 'settingsLibrary'], 'admin.settings.library');
+    $router->get('/settings/loans', [Controllers\AdminController::class, 'settingsLoans'], 'admin.settings.loans');
+    $router->get('/settings/fines', [Controllers\AdminController::class, 'settingsFines'], 'admin.settings.fines');
+    $router->get('/settings/notifications', [Controllers\AdminController::class, 'settingsNotifications'], 'admin.settings.notifications');
+    $router->get('/settings/smtp', [Controllers\AdminController::class, 'settingsSmtp'], 'admin.settings.smtp');
+    $router->get('/settings/about', [Controllers\AdminController::class, 'settingsAbout'], 'admin.settings.about');
+    $router->get('/settings/system', [Controllers\AdminController::class, 'settingsSystem'], 'admin.settings.system');
     $router->post('/settings', [Controllers\AdminController::class, 'updateSettings'], 'admin.settings.update');
     $router->post('/settings/smtp-test', [Controllers\AdminController::class, 'testSmtp'], 'admin.settings.smtp_test');
     $router->get('/settings/mail-queue', [Controllers\AdminController::class, 'mailQueue'], 'admin.settings.mail_queue');

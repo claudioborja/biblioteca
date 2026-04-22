@@ -32,7 +32,7 @@ $resourcesByType = $pdo->query(
 $typeLabels = [
     'physical' => 'Libros físicos',
     'digital'  => 'Libros digitales',
-    'journal'  => 'Revistas / Artículos',
+    'journal'  => 'Revistas',
     'thesis'   => 'Tesis',
     'other'    => 'Otros',
 ];

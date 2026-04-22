@@ -10,7 +10,7 @@
   - Libros físicos 894 85%
   - Libros digitales 117 11%
   - Otros 30 3%
-  - Revistas / Artículos 10 1%
+  - Revistas 10 1%
   - Tesis (sin datos)
 
 ### 2. Agregado Plugin Chart.js Data Labels

@@ -53,26 +53,33 @@ $attemptTone = static function (int $attempts, string $status): string {
 
 <section class="p-4 lg:p-6">
 
-    <!-- Header -->
-    <div class="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-            <p class="label-sm text-on-surface-subtle">Configuración</p>
-            <h1 class="headline-lg text-on-surface">Cola de correo</h1>
-            <p class="body-md mt-1 text-on-surface-subtle">Estado de envíos, reintentos y configuración del worker.</p>
+    <div class="mb-5 rounded-2xl border border-outline-variant/60 bg-white p-3 shadow-ambient lg:p-4">
+        <div class="mb-3 border-b border-outline-variant/50 pb-2">
+            <h1 class="inline-flex items-center gap-2 text-sm font-semibold text-on-surface">
+                <span class="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <?= \Helpers\Icons::settings('h-3.5 w-3.5') ?>
+                </span>
+                <span class="text-on-surface-subtle">Infraestructura de correo</span>
+                <span class="text-on-surface-subtle">·</span>
+                <span>Cola de correo</span>
+            </h1>
         </div>
-        <div class="flex items-center gap-2">
-            <a href="<?= BASE_URL ?>/admin/settings"
-               class="flex items-center gap-1.5 rounded-xl border border-outline-variant px-3 py-1.5 text-sm font-semibold text-on-surface hover:bg-surface-container transition-colors">
-                <i data-lucide="settings" class="h-4 w-4"></i>
-                Configuración
-            </a>
-            <?php if ($execOk): ?>
-            <button id="btn-run-worker"
-                    class="flex items-center gap-1.5 rounded-xl gradient-scholar px-3 py-1.5 text-sm font-semibold text-white shadow-ambient hover:opacity-90 transition-opacity">
-                <i data-lucide="play" class="h-4 w-4"></i>
-                Ejecutar ahora
-            </button>
-            <?php endif; ?>
+        <div class="flex flex-wrap items-center justify-between gap-2">
+            <p class="text-sm text-on-surface-subtle">Estado de envíos, reintentos y configuración del worker.</p>
+            <div class="flex items-center gap-2">
+                <a href="<?= BASE_URL ?>/admin/settings"
+                   class="flex items-center gap-1.5 rounded-xl border border-outline-variant px-3 py-1.5 text-sm font-semibold text-on-surface hover:bg-surface-container transition-colors">
+                    <?= \Helpers\Icons::settings('h-4 w-4') ?>
+                    Configuración
+                </a>
+                <?php if ($execOk): ?>
+                <button id="btn-run-worker"
+                        class="flex items-center gap-1.5 rounded-xl gradient-scholar px-3 py-1.5 text-sm font-semibold text-white shadow-ambient hover:opacity-90 transition-opacity">
+                    <?= \Helpers\Icons::arrowRight('h-4 w-4') ?>
+                    Ejecutar ahora
+                </button>
+                <?php endif; ?>
+            </div>
         </div>
     </div>
 

@@ -1181,6 +1181,19 @@ final class ResourceController extends BaseController
         };
     }
 
+    /** Maps resource_type value → URL slug. */
+    private function typeToSlug(string $type): ?string
+    {
+        return match ($type) {
+            'book'    => 'libros',
+            'ebook'   => 'digitales',
+            'journal' => 'revistas',
+            'thesis'  => 'tesis',
+            'other'   => 'otros',
+            default   => null,
+        };
+    }
+
     /** Returns display/field configuration for a given resource_type. */
     private function typeConfig(string $type): array
     {
@@ -1226,19 +1239,19 @@ final class ResourceController extends BaseController
                 'show_isbn'                => true,
                 'authors_required'         => true,
                 'show_edition'             => true,
-                'show_digital_url'         => true,
+                'show_digital_url'         => false,
                 'digital_url_required'     => true,
-                'show_inventory'           => false,
-                'copies_required'          => false,
-                'show_replacement_cost'    => false,
-                'replacement_cost_required'=> false,
-                'show_location'            => false,
-                'show_branch'              => false,
+                'show_inventory'           => true,
+                'copies_required'          => true,
+                'show_replacement_cost'    => true,
+                'replacement_cost_required'=> true,
+                'show_location'            => true,
+                'show_branch'              => true,
             ]),
             'journal' => array_merge($base, [
                 'slug'                     => 'revistas',
-                'label'                    => 'Revista / Artículo',
-                'label_plural'             => 'Revistas y artículos',
+                'label'                    => 'Revista',
+                'label_plural'             => 'Revistas',
                 'support_type'             => 'journal',
                 'show_authors'             => true,
                 'authors_label'            => 'Autor(es)',
@@ -1345,10 +1358,23 @@ final class ResourceController extends BaseController
         $authUser = $this->resolveAuthUser();
         if ($authUser === null) { Session::destroy(); return Response::redirect(BASE_URL . '/login'); }
 
+        $isModal = $request->get('modal', '') === '1';
+
         $type = $this->slugToType($slug);
         if ($type === null) {
             Session::flash('error', 'Tipo de recurso no válido.');
             return Response::redirect(BASE_URL . '/admin/resources');
+        }
+
+        // Saved via modal: send postMessage to parent
+        if ($isModal && $request->get('saved', '') === '1') {
+            $payload     = Session::getFlash('type_create_payload', null);
+            $jsonPayload = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            return Response::html(
+                '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"></head><body>'
+                . '<script>window.parent.postMessage({type:"resource-type-created",payload:'
+                . ($jsonPayload ?: 'null') . '},"*");</script></body></html>'
+            );
         }
 
         $cfg        = $this->typeConfig($type);
@@ -1369,8 +1395,9 @@ final class ResourceController extends BaseController
             'branches'   => $branches,
             'old'        => $old,
             'is_edit'    => false,
+            'is_modal'   => $isModal,
             'resource_id'=> null,
-        ], 'layouts/panel'));
+        ], $isModal ? 'layouts/modal' : 'layouts/panel'));
     }
 
     /** Store a new resource of the given type. */
@@ -1378,6 +1405,9 @@ final class ResourceController extends BaseController
     {
         $authUser = $this->resolveAuthUser();
         if ($authUser === null) { Session::destroy(); return Response::redirect(BASE_URL . '/login'); }
+
+        $isModal = $request->post('modal', '') === '1' || $request->get('modal', '') === '1';
+        $isWizardSource = (string) $request->post('form_source', '') === 'wizard';
 
         $type = $this->slugToType($slug);
         if ($type === null) {
@@ -1392,26 +1422,100 @@ final class ResourceController extends BaseController
         if ($coverImageFile !== null && (int)($coverImageFile['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
             $uploadError = $this->validateCoverImageFile($coverImageFile);
             if ($uploadError !== null) {
+                Session::flash('type_form_old', $d['raw']);
                 Session::flash('error', $uploadError);
-                return Response::redirect(BASE_URL . '/admin/resources/type/' . $slug);
+                $backUrl = BASE_URL . '/admin/resources/type/' . $slug . '/create';
+                if ($isModal) {
+                    $backUrl .= '?modal=1';
+                } elseif ($isWizardSource) {
+                    $backUrl = BASE_URL . '/admin/resources/type/' . $slug;
+                }
+                return Response::redirect($backUrl);
             }
             $uploaded = $this->storeCoverImage($coverImageFile);
             $d['cover_image'] = $uploaded ?? '';
             $d['raw']['cover_image'] = $d['cover_image'];
         }
 
+        if ($type === 'ebook') {
+            $digitalFile = $request->file('digital_pdf');
+            if ($digitalFile !== null && (int)($digitalFile['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+                $pdfError = $this->validateDigitalPdfFile($digitalFile);
+                if ($pdfError !== null) {
+                    Session::flash('type_form_old', $d['raw']);
+                    Session::flash('error', $pdfError);
+                    $backUrl = BASE_URL . '/admin/resources/type/' . $slug . '/create';
+                    if ($isModal) {
+                        $backUrl .= '?modal=1';
+                    } elseif ($isWizardSource) {
+                        $backUrl = BASE_URL . '/admin/resources/type/' . $slug;
+                    }
+                    return Response::redirect($backUrl);
+                }
+
+                $storedPdf = $this->storeDigitalPdf($digitalFile);
+                if ($storedPdf === null) {
+                    Session::flash('type_form_old', $d['raw']);
+                    Session::flash('error', 'No se pudo guardar el archivo PDF digital.');
+                    $backUrl = BASE_URL . '/admin/resources/type/' . $slug . '/create';
+                    if ($isModal) {
+                        $backUrl .= '?modal=1';
+                    } elseif ($isWizardSource) {
+                        $backUrl = BASE_URL . '/admin/resources/type/' . $slug;
+                    }
+                    return Response::redirect($backUrl);
+                }
+
+                $d['digital_url'] = $storedPdf;
+                $d['raw']['digital_url'] = $storedPdf;
+            }
+        }
+
         $errors = $this->validateTypeData($d, $cfg);
 
         if ($errors !== []) {
+            Session::flash('type_form_old', $d['raw']);
             Session::flash('error', implode(' ', $errors));
-            return Response::redirect(BASE_URL . '/admin/resources/type/' . $slug);
+            $backUrl = BASE_URL . '/admin/resources/type/' . $slug . '/create';
+            if ($isModal) {
+                $backUrl .= '?modal=1';
+            } elseif ($isWizardSource) {
+                $backUrl = BASE_URL . '/admin/resources/type/' . $slug;
+            }
+            return Response::redirect($backUrl);
         }
 
-        $this->doInsertResource($d);
+        $newId = $this->doInsertResource($d);
+
+        if ($isModal) {
+            $authors = array_values(array_filter(array_map(
+                static fn(string $a): string => trim($a),
+                preg_split('/[,;\n]+/', $d['authors']) ?: []
+            )));
+
+            $total = (int) $d['total_copies'];
+            $available = (int) $d['available_copies'];
+            if (!$cfg['show_inventory']) {
+                $available = $total;
+            }
+
+            Session::flash('type_create_payload', [
+                'id'        => $newId,
+                'title'     => $d['title'],
+                'author'    => implode(', ', $authors),
+                'category'  => $this->categoryNameById((int) $d['category_id']),
+                'copies'    => $total,
+                'available' => $available,
+                'status'    => $this->inventoryStatus($available, $total, 1),
+                'message'   => $cfg['label'] . ' registrado correctamente.',
+            ]);
+            return Response::redirect(BASE_URL . '/admin/resources/type/' . $slug . '/create?modal=1&saved=1');
+        }
 
         Session::flash('success', $cfg['label'] . ' registrado correctamente.');
         return Response::redirect(BASE_URL . '/admin/resources/type/' . $slug);
     }
+
 
     /** Show edit form for a resource of the given type. */
     public function typeEdit(Request $request, string $slug = '', string $id = ''): Response
@@ -1454,6 +1558,14 @@ final class ResourceController extends BaseController
         if (!$resource) {
             Session::flash('error', 'Recurso no encontrado.');
             return Response::redirect(BASE_URL . '/admin/resources/type/' . $slug);
+        }
+
+        $currentType = (string) ($resource['resource_type'] ?? 'book');
+        if ($currentType !== $type) {
+            $correctSlug = $this->typeToSlug($currentType) ?? $slug;
+            Session::flash('error', 'El recurso solicitado pertenece a otro tipo.');
+            $editUrl = BASE_URL . '/admin/resources/type/' . $correctSlug . '/' . $resourceId . '/edit';
+            return Response::redirect($isModal ? $editUrl . '?modal=1' : $editUrl);
         }
 
         $cfg        = $this->typeConfig($type);
@@ -1533,8 +1645,43 @@ final class ResourceController extends BaseController
             return Response::redirect(BASE_URL . '/admin/resources/type/' . $slug);
         }
 
+        $currentStmt = $this->db->prepare(
+            'SELECT id,
+                COALESCE(resource_type,\'book\') AS resource_type,
+                COALESCE(available_copies, 0) AS available_copies,
+                COALESCE(is_active, 1) AS is_active
+             FROM resources
+             WHERE id = ?
+             LIMIT 1'
+        );
+        $currentStmt->execute([$resourceId]);
+        $current = $currentStmt->fetch();
+
+        if (!$current) {
+            Session::flash('error', 'Recurso no encontrado.');
+            return Response::redirect(BASE_URL . '/admin/resources/type/' . $slug);
+        }
+
+        $currentType = (string) ($current['resource_type'] ?? 'book');
+        if ($currentType !== $type) {
+            $correctSlug = $this->typeToSlug($currentType) ?? $slug;
+            Session::flash('error', 'No se pudo actualizar: el recurso pertenece a otro tipo.');
+            $editUrl = BASE_URL . '/admin/resources/type/' . $correctSlug . '/' . $resourceId . '/edit';
+            return Response::redirect($isModal ? $editUrl . '?modal=1' : $editUrl);
+        }
+
         $cfg    = $this->typeConfig($type);
         $d      = $this->extractTypeFormData($request, $type, $cfg);
+
+        $requestData = $request->all();
+        if (!array_key_exists('available_copies', $requestData)) {
+            $d['available_copies'] = (int) ($current['available_copies'] ?? 0);
+            $d['raw']['available_copies'] = (string) $d['available_copies'];
+        }
+        if (!array_key_exists('is_active', $requestData)) {
+            $d['is_active'] = (int) ($current['is_active'] ?? 1);
+            $d['raw']['is_active'] = (string) $d['is_active'];
+        }
 
         $coverImageFile = $request->file('cover_image');
         if ($coverImageFile !== null && (int)($coverImageFile['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
@@ -1556,6 +1703,40 @@ final class ResourceController extends BaseController
             }
         }
 
+        $existingDigitalPath = '';
+        $uploadedDigitalPath = '';
+        if ($type === 'ebook') {
+            $existingDigitalPath = trim((string) $request->post('existing_digital_url', ''));
+            if ($existingDigitalPath !== '') {
+                $d['digital_url'] = $existingDigitalPath;
+                $d['raw']['digital_url'] = $existingDigitalPath;
+            }
+
+            $digitalFile = $request->file('digital_pdf');
+            if ($digitalFile !== null && (int)($digitalFile['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+                $pdfError = $this->validateDigitalPdfFile($digitalFile);
+                if ($pdfError !== null) {
+                    Session::flash('type_form_old', $d['raw']);
+                    Session::flash('error', $pdfError);
+                    $editUrl = BASE_URL . '/admin/resources/type/' . $slug . '/' . $resourceId . '/edit';
+                    return Response::redirect($isModal ? $editUrl . '?modal=1' : $editUrl);
+                }
+
+                $storedPdf = $this->storeDigitalPdf($digitalFile);
+                if ($storedPdf === null) {
+                    Session::flash('type_form_old', $d['raw']);
+                    Session::flash('error', 'No se pudo guardar el archivo PDF digital.');
+                    $editUrl = BASE_URL . '/admin/resources/type/' . $slug . '/' . $resourceId . '/edit';
+                    return Response::redirect($isModal ? $editUrl . '?modal=1' : $editUrl);
+                }
+
+                $uploadedDigitalPath = $storedPdf;
+
+                $d['digital_url'] = $storedPdf;
+                $d['raw']['digital_url'] = $storedPdf;
+            }
+        }
+
         $errors = $this->validateTypeData($d, $cfg, $resourceId);
 
         if ($errors !== []) {
@@ -1566,6 +1747,10 @@ final class ResourceController extends BaseController
         }
 
         $this->doUpdateResource($resourceId, $d);
+
+        if ($type === 'ebook' && $uploadedDigitalPath !== '' && $existingDigitalPath !== '' && $uploadedDigitalPath !== $existingDigitalPath) {
+            $this->deleteStoredDigitalPdf($existingDigitalPath);
+        }
 
         if ($isModal) {
             $authors = array_values(array_filter(array_map(
@@ -1587,6 +1772,198 @@ final class ResourceController extends BaseController
 
         Session::flash('success', $cfg['label'] . ' actualizado correctamente.');
         return Response::redirect(BASE_URL . '/admin/resources/type/' . $slug);
+    }
+
+    /** Delete a resource of the given type and remove its stored cover image, if any. */
+    public function typeDelete(Request $request, string $slug = '', string $id = ''): Response
+    {
+        $authUser = $this->resolveAuthUser();
+        if ($authUser === null) { Session::destroy(); return Response::redirect(BASE_URL . '/login'); }
+
+        if (!hash_equals(Session::get('_csrf_token', ''), $request->post('_csrf_token', ''))) {
+            Session::flash('error', 'Token de seguridad inválido.');
+            return Response::redirect(BASE_URL . '/admin/resources/type/' . $slug);
+        }
+
+        $type = $this->slugToType($slug);
+        if ($type === null) {
+            Session::flash('error', 'Tipo de recurso no válido.');
+            return Response::redirect(BASE_URL . '/admin/resources');
+        }
+
+        $resourceId = (int) $id;
+        if ($resourceId <= 0) {
+            Session::flash('error', 'Recurso inválido.');
+            return Response::redirect(BASE_URL . '/admin/resources/type/' . $slug);
+        }
+
+        $stmt = $this->db->prepare(
+            'SELECT id, title, COALESCE(resource_type,\'book\') AS resource_type, cover_image, digital_url
+             FROM resources WHERE id = ? LIMIT 1'
+        );
+        $stmt->execute([$resourceId]);
+        $resource = $stmt->fetch();
+
+        if (!$resource) {
+            Session::flash('error', 'Recurso no encontrado.');
+            return Response::redirect(BASE_URL . '/admin/resources/type/' . $slug);
+        }
+
+        $currentType = (string) ($resource['resource_type'] ?? 'book');
+        if ($currentType !== $type) {
+            $correctSlug = $this->typeToSlug($currentType) ?? $slug;
+            Session::flash('error', 'El recurso solicitado pertenece a otro tipo.');
+            return Response::redirect(BASE_URL . '/admin/resources/type/' . $correctSlug);
+        }
+
+        try {
+            $delete = $this->db->prepare('DELETE FROM resources WHERE id = ? LIMIT 1');
+            $delete->execute([$resourceId]);
+        } catch (\PDOException $e) {
+            // FK violations (loans/reservations/etc.)
+            $sqlState = (string) $e->getCode();
+            if ($sqlState === '23000') {
+                Session::flash('error', 'No se puede eliminar este recurso porque tiene préstamos, reservas u otros movimientos asociados.');
+            } else {
+                Session::flash('error', 'No se pudo eliminar el recurso en este momento. Inténtalo nuevamente.');
+            }
+            return Response::redirect(BASE_URL . '/admin/resources/type/' . $slug);
+        } catch (\Throwable $e) {
+            Session::flash('error', 'No se pudo eliminar el recurso en este momento. Inténtalo nuevamente.');
+            return Response::redirect(BASE_URL . '/admin/resources/type/' . $slug);
+        }
+
+        // Non-blocking audit log. Deletion must not fail if audit logging fails.
+        try {
+            $stmt = $this->db->prepare(
+                'INSERT INTO audit_logs (user_id, action, entity_type, entity_id, old_values, new_values, ip_address, user_agent)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+            );
+
+            $oldValues = [
+                'title' => (string) ($resource['title'] ?? ''),
+                'resource_type' => (string) ($resource['resource_type'] ?? ''),
+            ];
+
+            $stmt->execute([
+                (int) ($authUser['id'] ?? 0) ?: null,
+                'resource.delete',
+                'resource',
+                $resourceId,
+                json_encode($oldValues, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                null,
+                (string) ($_SERVER['REMOTE_ADDR'] ?? 'cli'),
+                mb_substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? 'cli'), 0, 255),
+            ]);
+        } catch (\Throwable) {
+            // Do not block user flow if audit fails.
+        }
+
+        $this->deleteStoredCoverImage((string) ($resource['cover_image'] ?? ''));
+        $this->deleteStoredDigitalPdf((string) ($resource['digital_url'] ?? ''));
+
+        Session::flash('success', 'Recurso eliminado correctamente.');
+        return Response::redirect(BASE_URL . '/admin/resources/type/' . $slug);
+    }
+
+    /** Stream a digital PDF only when user has an active reservation for this resource. */
+    public function readDigitalResource(Request $request, string $id = ''): Response
+    {
+        $authUser = $this->resolveAuthUser();
+        if ($authUser === null) {
+            Session::destroy();
+            return Response::redirect(BASE_URL . '/login');
+        }
+
+        $resourceId = (int) $id;
+        if ($resourceId <= 0) {
+            Session::flash('error', 'Recurso digital inválido.');
+            return Response::redirect(BASE_URL . '/catalog');
+        }
+
+        $stmt = $this->db->prepare(
+            'SELECT id, title, support_type, is_active, digital_url
+             FROM resources
+             WHERE id = ? LIMIT 1'
+        );
+        $stmt->execute([$resourceId]);
+        $resource = $stmt->fetch();
+
+        if (!$resource || (int) ($resource['is_active'] ?? 0) !== 1 || (string) ($resource['support_type'] ?? '') !== 'digital') {
+            Session::flash('error', 'El recurso digital no está disponible.');
+            return Response::redirect(BASE_URL . '/catalog/' . $resourceId);
+        }
+
+                $reservationStmt = $this->db->prepare(
+            "SELECT id
+             FROM reservations
+             WHERE resource_id = ?
+               AND user_id = ?
+               AND status IN ('waiting', 'notified', 'fulfilled')
+             ORDER BY id DESC
+             LIMIT 1"
+        );
+        $reservationStmt->execute([$resourceId, (int) $authUser['id']]);
+                $hasReservation = (bool) $reservationStmt->fetch();
+
+                $loanStmt = $this->db->prepare(
+                        "SELECT id
+                         FROM loans
+                         WHERE resource_id = ?
+                             AND user_id = ?
+                             AND status IN ('active','overdue')
+                         ORDER BY id DESC
+                         LIMIT 1"
+                );
+                $loanStmt->execute([$resourceId, (int) $authUser['id']]);
+                $hasActiveLoan = (bool) $loanStmt->fetch();
+
+                if (!$hasReservation && !$hasActiveLoan) {
+            Session::flash('error', 'Debes reservar este libro digital para poder leerlo.');
+            return Response::redirect(BASE_URL . '/catalog/' . $resourceId);
+        }
+
+        $relativePath = trim((string) ($resource['digital_url'] ?? ''));
+        if ($relativePath === '' || !str_starts_with($relativePath, '/storage/uploads/digital-resources/')) {
+            Session::flash('error', 'El archivo PDF del recurso no está disponible.');
+            return Response::redirect(BASE_URL . '/catalog/' . $resourceId);
+        }
+
+        $storageRoot = realpath(BASE_PATH . '/storage/uploads/digital-resources');
+        $absolutePath = realpath(BASE_PATH . $relativePath);
+        if ($storageRoot === false || $absolutePath === false || !is_file($absolutePath)) {
+            Session::flash('error', 'El archivo PDF del recurso no fue encontrado.');
+            return Response::redirect(BASE_URL . '/catalog/' . $resourceId);
+        }
+
+        if (!str_starts_with($absolutePath, $storageRoot . DIRECTORY_SEPARATOR)) {
+            Session::flash('error', 'Ruta de archivo digital inválida.');
+            return Response::redirect(BASE_URL . '/catalog/' . $resourceId);
+        }
+
+        try {
+            $this->db->prepare('UPDATE resources SET digital_access_count = digital_access_count + 1 WHERE id = ?')
+                ->execute([$resourceId]);
+
+            $this->db->prepare(
+                "INSERT INTO digital_access_log (resource_id, user_id, action, ip_address, created_at)
+                 VALUES (?, ?, 'view', ?, NOW())"
+            )->execute([
+                $resourceId,
+                (int) $authUser['id'],
+                (string) ($_SERVER['REMOTE_ADDR'] ?? 'cli'),
+            ]);
+        } catch (\Throwable) {
+            // Non-blocking logging.
+        }
+
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: inline; filename="recurso-digital-' . $resourceId . '.pdf"');
+        header('X-Content-Type-Options: nosniff');
+        header('Cache-Control: private, no-store, max-age=0');
+        header('Content-Length: ' . (string) filesize($absolutePath));
+        readfile($absolutePath);
+        exit;
     }
 
     // ── Type CRUD helpers ─────────────────────────────────────────────────────
@@ -1716,7 +2093,9 @@ final class ResourceController extends BaseController
             $errors[] = 'Selecciona una categoría.';
         }
         if ($cfg['digital_url_required'] && $d['digital_url'] === '') {
-            $errors[] = 'La URL de acceso digital es obligatoria.';
+            $errors[] = (($d['resource_type'] ?? '') === 'ebook')
+                ? 'Debes cargar el archivo PDF del libro digital.'
+                : 'La URL de acceso digital es obligatoria.';
         }
         if ($cfg['copies_required'] && $d['total_copies'] <= 0) {
             $errors[] = 'Las copias totales deben ser al menos 1.';
@@ -1753,7 +2132,7 @@ final class ResourceController extends BaseController
         return $errors;
     }
 
-    private function doInsertResource(array $d): void
+    private function doInsertResource(array $d): int
     {
         $isbn13  = $d['isbn'] !== '' ? Isbn::normalize($d['isbn']) : null;
         $authors = array_values(array_filter(array_map(
@@ -1821,6 +2200,8 @@ final class ResourceController extends BaseController
             'total_copies'      => $totalCopies,
             'available_copies'  => $totalCopies,
         ]);
+
+        return (int) $this->db->lastInsertId();
     }
 
     private function doUpdateResource(int $id, array $d): void
@@ -1935,6 +2316,39 @@ final class ResourceController extends BaseController
         $allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
         if (!in_array($mime, $allowed, true)) {
             return 'Formato de imagen no permitido. Usa JPG, PNG, WEBP o GIF.';
+        }
+
+        return null;
+    }
+
+    private function validateDigitalPdfFile(array $file): ?string
+    {
+        $error = (int) ($file['error'] ?? UPLOAD_ERR_NO_FILE);
+        if ($error === UPLOAD_ERR_NO_FILE) {
+            return 'Debes cargar un archivo PDF para el libro digital.';
+        }
+        if ($error !== UPLOAD_ERR_OK) {
+            return 'Error al cargar el archivo PDF.';
+        }
+
+        $size = (int) ($file['size'] ?? 0);
+        if ($size <= 0) {
+            return 'El archivo PDF es inválido.';
+        }
+        if ($size > 50 * 1024 * 1024) {
+            return 'El PDF no puede superar 50MB.';
+        }
+
+        $tmpName = (string) ($file['tmp_name'] ?? '');
+        $mime = '';
+        if (is_file($tmpName)) {
+            $finfo = new \finfo(FILEINFO_MIME_TYPE);
+            $mime = (string) $finfo->file($tmpName);
+        }
+
+        $extension = strtolower((string) pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
+        if ($mime !== 'application/pdf' || $extension !== 'pdf') {
+            return 'Solo se permiten archivos PDF válidos.';
         }
 
         return null;
@@ -2057,5 +2471,82 @@ final class ResourceController extends BaseController
         }
 
         return '/uploads/resources/' . $filename;
+    }
+
+    private function storeDigitalPdf(array $file): ?string
+    {
+        $tmpName = (string) ($file['tmp_name'] ?? '');
+        if (!is_uploaded_file($tmpName)) {
+            return null;
+        }
+
+        $directory = BASE_PATH . '/storage/uploads/digital-resources';
+        if (!is_dir($directory) && !mkdir($directory, 0775, true) && !is_dir($directory)) {
+            return null;
+        }
+
+        try {
+            $entropy = bin2hex(random_bytes(8));
+        } catch (\Throwable) {
+            $entropy = (string) mt_rand(10000000, 99999999);
+        }
+
+        $filename = 'ebook_' . date('Ymd_His') . '_' . $entropy . '.pdf';
+        $destination = $directory . '/' . $filename;
+
+        if (!move_uploaded_file($tmpName, $destination)) {
+            return null;
+        }
+
+        return '/storage/uploads/digital-resources/' . $filename;
+    }
+
+    /** Removes a stored cover image file when it belongs to /public/uploads/resources. */
+    private function deleteStoredCoverImage(string $coverImagePath): void
+    {
+        $relative = trim($coverImagePath);
+        if ($relative === '' || !str_starts_with($relative, '/uploads/resources/')) {
+            return;
+        }
+
+        $uploadsRoot = realpath(BASE_PATH . '/public/uploads/resources');
+        if ($uploadsRoot === false) {
+            return;
+        }
+
+        $absolute = realpath(BASE_PATH . '/public' . $relative);
+        if ($absolute === false || !is_file($absolute)) {
+            return;
+        }
+
+        if (!str_starts_with($absolute, $uploadsRoot . DIRECTORY_SEPARATOR)) {
+            return;
+        }
+
+        @unlink($absolute);
+    }
+
+    private function deleteStoredDigitalPdf(string $pdfPath): void
+    {
+        $relative = trim($pdfPath);
+        if ($relative === '' || !str_starts_with($relative, '/storage/uploads/digital-resources/')) {
+            return;
+        }
+
+        $storageRoot = realpath(BASE_PATH . '/storage/uploads/digital-resources');
+        if ($storageRoot === false) {
+            return;
+        }
+
+        $absolute = realpath(BASE_PATH . $relative);
+        if ($absolute === false || !is_file($absolute)) {
+            return;
+        }
+
+        if (!str_starts_with($absolute, $storageRoot . DIRECTORY_SEPARATOR)) {
+            return;
+        }
+
+        @unlink($absolute);
     }
 }

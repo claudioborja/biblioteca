@@ -25,7 +25,7 @@ $resourceSupportMap = is_array($resource_support_map ?? null) ? $resource_suppor
 $resourceTypeLabels = [
     'book' => 'Libro',
     'ebook' => 'Libro digital',
-    'journal'     => 'Revista / Artículo',
+    'journal'     => 'Revista',
     'thesis'      => 'Tesis',
     'map'         => 'Otro',
     'score'       => 'Otro',
@@ -38,7 +38,7 @@ $resourceTypeLabels = [
 $supportTypeLabels = [
     'physical' => 'Físico',
     'digital'  => 'Digital',
-    'journal'  => 'Revista / Artículo',
+    'journal'  => 'Revista',
     'thesis'   => 'Tesis',
     'other'    => 'Otro',
 ];

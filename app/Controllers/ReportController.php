@@ -143,15 +143,132 @@ final class ReportController
 
         $handle = fopen('php://temp', 'r+');
         fputs($handle, "\xEF\xBB\xBF");
-        fputcsv($handle, ['Usuario', 'N° Usuario', 'Recurso', 'ISBN/Código', 'Fecha préstamo', 'Fecha vencimiento', 'Fecha devolución', 'Estado']);
+        fputcsv($handle, ['Usuario', 'N° Usuario', 'Recurso', 'ISBN/Código', 'Fecha préstamo', 'Fecha vencimiento', 'Fecha devolución', 'Estado'], ',', '"', '\\');
         foreach ($rows as $row) {
             fputcsv($handle, [
                 $row['usuario'], $row['numero_usuario'], $row['recurso'], $row['codigo'],
                 $row['loan_at'] ?? '', $row['due_at'] ?? '', $row['returned_at'] ?? '',
                 $this->loanStatusLabel($row['status']),
-            ]);
+            ], ',', '"', '\\');
         }
         return $this->csvResponse($handle, 'prestamos');
+    }
+
+    public function exportLoansExcel(Request $request): Response
+    {
+        if ($this->auth() === null) return $this->redirectLogin();
+
+        $rows = $this->db->query(
+            "SELECT u.name AS usuario, u.user_number AS numero_usuario,
+                    r.title AS recurso, COALESCE(r.isbn_13, '') AS codigo,
+                    l.loan_at, l.due_at, l.returned_at, l.status
+             FROM loans l
+             JOIN users u ON u.id = l.user_id
+             JOIN resources r ON r.id = l.resource_id
+             ORDER BY l.loan_at DESC"
+        )->fetchAll();
+
+        $libraryName = $this->libraryName();
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Préstamos');
+
+        $headerFill = ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['argb' => 'FF1E3A5F']];
+        $headerFont = ['bold' => true, 'color' => ['argb' => 'FFFFFFFF'], 'size' => 10];
+        $borderThin = ['style' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN, 'color' => ['argb' => 'FFD0D8E4']];
+        $allBorders = ['allBorders' => $borderThin];
+
+        $sheet->mergeCells('A1:H1');
+        $sheet->setCellValue('A1', $libraryName . ' · Reporte de préstamos · ' . date('d/m/Y H:i'));
+        $sheet->getStyle('A1')->applyFromArray([
+            'font' => ['bold' => true, 'size' => 13, 'color' => ['argb' => 'FF1E3A5F']],
+            'alignment' => [
+                'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_LEFT,
+                'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER,
+            ],
+        ]);
+        $sheet->getRowDimension(1)->setRowHeight(28);
+
+        $headers = [
+            'A' => 'Usuario',
+            'B' => 'N° Usuario',
+            'C' => 'Recurso',
+            'D' => 'ISBN/Código',
+            'E' => 'Fecha préstamo',
+            'F' => 'Fecha vencimiento',
+            'G' => 'Fecha devolución',
+            'H' => 'Estado',
+        ];
+        foreach ($headers as $col => $label) {
+            $sheet->setCellValue($col . '2', $label);
+        }
+        $sheet->getStyle('A2:H2')->applyFromArray([
+            'fill' => $headerFill,
+            'font' => $headerFont,
+            'alignment' => [
+                'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
+                'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER,
+            ],
+            'borders' => $allBorders,
+        ]);
+        $sheet->getRowDimension(2)->setRowHeight(20);
+
+        $dataRow = 3;
+        foreach ($rows as $r) {
+            $sheet->setCellValue('A' . $dataRow, (string) ($r['usuario'] ?? ''));
+            $sheet->setCellValue('B' . $dataRow, (string) ($r['numero_usuario'] ?? ''));
+            $sheet->setCellValue('C' . $dataRow, (string) ($r['recurso'] ?? ''));
+            $sheet->setCellValue('D' . $dataRow, (string) ($r['codigo'] ?? ''));
+            $sheet->setCellValue('E' . $dataRow, (string) ($r['loan_at'] ?? ''));
+            $sheet->setCellValue('F' . $dataRow, (string) ($r['due_at'] ?? ''));
+            $sheet->setCellValue('G' . $dataRow, (string) ($r['returned_at'] ?? ''));
+            $sheet->setCellValue('H' . $dataRow, $this->loanStatusLabel((string) ($r['status'] ?? '')));
+
+            if ($dataRow % 2 === 0) {
+                $sheet->getStyle('A' . $dataRow . ':H' . $dataRow)->applyFromArray([
+                    'fill' => [
+                        'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                        'startColor' => ['argb' => 'FFF5F7FA'],
+                    ],
+                ]);
+            }
+            $sheet->getStyle('A' . $dataRow . ':H' . $dataRow)->applyFromArray(['borders' => $allBorders]);
+            $dataRow++;
+        }
+
+        foreach ([
+            'A' => 30,
+            'B' => 16,
+            'C' => 42,
+            'D' => 18,
+            'E' => 20,
+            'F' => 20,
+            'G' => 20,
+            'H' => 14,
+        ] as $col => $width) {
+            $sheet->getColumnDimension($col)->setWidth($width);
+        }
+        $sheet->freezePane('A3');
+        $lastRow = max($dataRow - 1, 2);
+        $sheet->setAutoFilter('A2:H' . $lastRow);
+
+        $spreadsheet->getProperties()
+            ->setCreator($libraryName)
+            ->setTitle('Reporte de préstamos')
+            ->setDescription('Generado el ' . date('d/m/Y H:i'));
+
+        $filename = 'prestamos_' . date('Ymd_His') . '.xlsx';
+        ob_start();
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        $writer->save('php://output');
+        $xlsx = ob_get_clean();
+
+        return new Response((string) $xlsx, 200, [
+            'Content-Type'        => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Cache-Control'       => 'no-store, no-cache, must-revalidate',
+            'Pragma'              => 'no-cache',
+        ]);
     }
 
     public function exportInventoryCsv(Request $request): Response
@@ -173,14 +290,14 @@ final class ReportController
 
         $handle = fopen('php://temp', 'r+');
         fputs($handle, "\xEF\xBB\xBF");
-        fputcsv($handle, ['Código', 'Título', 'Autor', 'Categoría', 'Tipo', 'Copias', 'Disponibles', 'En préstamo', 'Préstamos totales', 'Estado']);
+        fputcsv($handle, ['Código', 'Título', 'Autor', 'Categoría', 'Tipo', 'Copias', 'Disponibles', 'En préstamo', 'Préstamos totales', 'Estado'], ',', '"', '\\');
         foreach ($rows as $r) {
             fputcsv($handle, [
                 $r['codigo'], $r['title'], $this->formatAuthors($r['authors'] ?? ''), $r['categoria'],
                 $r['tipo'], $r['total_copies'], $r['available_copies'],
                 $r['en_prestamo'], $r['prestamos_totales'],
                 $this->resourceStatusLabel($r['is_active'] ?? 0),
-            ]);
+            ], ',', '"', '\\');
         }
         return $this->csvResponse($handle, 'inventario');
     }
@@ -202,7 +319,7 @@ final class ReportController
 
         $handle = fopen('php://temp', 'r+');
         fputs($handle, "\xEF\xBB\xBF");
-        fputcsv($handle, ['N° Usuario', 'Nombre', 'Correo', 'Rol', 'Estado', 'Préstamos', 'Multas pendientes', 'Fecha registro']);
+        fputcsv($handle, ['N° Usuario', 'Nombre', 'Correo', 'Rol', 'Estado', 'Préstamos', 'Multas pendientes', 'Fecha registro'], ',', '"', '\\');
         foreach ($rows as $r) {
             fputcsv($handle, [
                 $r['user_number'], $r['name'], $r['email'],
@@ -210,7 +327,7 @@ final class ReportController
                 $r['status'] === 'active' ? 'Activo' : ucfirst($r['status']),
                 $r['prestamos'], $r['multas_pendientes'],
                 substr($r['created_at'] ?? '', 0, 10),
-            ]);
+            ], ',', '"', '\\');
         }
         return $this->csvResponse($handle, 'usuarios');
     }
@@ -234,7 +351,7 @@ final class ReportController
 
         $handle = fopen('php://temp', 'r+');
         fputs($handle, "\xEF\xBB\xBF");
-        fputcsv($handle, ['Usuario', 'N° Usuario', 'Recurso', 'Monto', 'Pagado', 'Pendiente', 'Estado', 'Fecha']);
+        fputcsv($handle, ['Usuario', 'N° Usuario', 'Recurso', 'Monto', 'Pagado', 'Pendiente', 'Estado', 'Fecha'], ',', '"', '\\');
         foreach ($rows as $r) {
             fputcsv($handle, [
                 $r['usuario'], $r['user_number'], $r['recurso'],
@@ -243,7 +360,7 @@ final class ReportController
                 number_format((float)$r['pendiente'], 2, '.', ''),
                 $this->fineStatusLabel($r['status']),
                 substr($r['created_at'] ?? '', 0, 10),
-            ]);
+            ], ',', '"', '\\');
         }
         return $this->csvResponse($handle, 'multas');
     }
