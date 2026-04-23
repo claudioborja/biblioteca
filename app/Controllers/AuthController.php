@@ -317,9 +317,9 @@ final class AuthController
             $expires = date('Y-m-d H:i:s', strtotime('+' . self::RESET_TTL_MIN . ' minutes'));
             $this->users->savePasswordResetToken((int) $user['id'], hash('sha256', $token), $expires);
 
-            $resetUrl = BASE_URL . '/reset-password/' . $token . '?email=' . urlencode($email);
+            $resetUrl = $this->appBaseUrl() . '/reset-password/' . $token . '?email=' . urlencode($email);
 
-            // Write reset link to log (replace with real email service when available)
+            $this->queuePasswordResetEmail($user['name'], $email, $resetUrl);
             $this->auditLog('password_reset_requested', (int) $user['id'], ['reset_url' => $resetUrl]);
         }
 
@@ -508,6 +508,79 @@ final class AuthController
             $context ? json_encode($context) : ''
         );
         file_put_contents($dir . '/auth.log', $line, FILE_APPEND | LOCK_EX);
+    }
+
+    private function queuePasswordResetEmail(string $name, string $email, string $resetUrl): void
+    {
+        $safeUrl  = htmlspecialchars($resetUrl, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $safeName = htmlspecialchars($name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+
+        $contentHtml = '<p>Hola <strong>' . $safeName . '</strong>,</p>'
+            . '<p>Recibimos una solicitud para restablecer la contraseña de tu cuenta. '
+            . 'Haz clic en el siguiente botón para crear una nueva contraseña:</p>'
+            . '<p style="margin:18px 0;"><a href="' . $safeUrl . '" '
+            . 'style="display:inline-block;background:#1e3a8a;color:#ffffff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:600;">'
+            . 'Restablecer contraseña</a></p>'
+            . '<p>Si el botón no funciona, copia y pega este enlace en tu navegador:</p>'
+            . '<p style="word-break:break-all;">' . $safeUrl . '</p>'
+            . '<p style="margin-top:18px;color:#6b7280;font-size:13px;">Si no solicitaste este cambio, ignora este correo. Tu contraseña no será modificada.</p>';
+
+        $html = $this->emailTemplate->renderSystem(
+            'Restablece tu contraseña',
+            'Recuperación de contraseña',
+            'Recibimos una solicitud para restablecer la contraseña de tu cuenta.',
+            $contentHtml,
+            'Este enlace expira en ' . self::RESET_TTL_MIN . ' minutos.'
+        );
+
+        $text = $this->emailTemplate->renderSystemText(
+            'Recuperación de contraseña',
+            'Recibimos una solicitud para restablecer la contraseña de tu cuenta.',
+            'Abre este enlace para crear una nueva contraseña: ' . $resetUrl,
+            'Este enlace expira en ' . self::RESET_TTL_MIN . ' minutos. Si no lo solicitaste, ignora este correo.'
+        );
+
+        $queueId = null;
+
+        try {
+            $queueId = $this->mailQueue->enqueue(
+                $email,
+                $name,
+                'Restablece tu contraseña — Biblioteca',
+                $html,
+                $text,
+                null,
+                1  // priority: critical
+            );
+
+            if ($this->shouldSendVerificationImmediately()) {
+                $mailer = new MailService();
+                $mailer->send(
+                    toEmail: $email,
+                    toName: $name,
+                    subject: 'Restablece tu contraseña — Biblioteca',
+                    bodyHtml: $html,
+                    bodyText: $text,
+                    context: [
+                        'source'   => 'password_reset_immediate',
+                        'queue_id' => $queueId,
+                    ]
+                );
+                $this->mailQueue->markSent($queueId);
+            }
+        } catch (\Throwable $e) {
+            if (is_int($queueId) && $queueId > 0) {
+                try {
+                    $this->mailQueue->markRetry($queueId, 1, $e->getMessage(), 5);
+                } catch (\Throwable) {
+                    // Ignore.
+                }
+            }
+            $this->auditLog('password_reset_email_queue_failed', null, [
+                'email' => $email,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function queueVerificationEmail(string $name, string $email, string $verifyUrl): void

@@ -118,16 +118,17 @@ final class ReservationController extends BaseController
                  FROM resources
                  WHERE is_active = 1
                    AND (
-                        title LIKE :like
-                        OR isbn_13 LIKE :like
-                        OR publisher LIKE :like
-                        OR description LIKE :like
-                        OR authors LIKE :like
+                        title LIKE ?
+                        OR isbn_13 LIKE ?
+                        OR publisher LIKE ?
+                        OR description LIKE ?
+                        OR authors LIKE ?
                    )
                  ORDER BY available_copies DESC, title ASC
                  LIMIT 12"
             );
-            $candidateStmt->execute([':like' => '%' . $resourceSearch . '%']);
+              $like = '%' . $resourceSearch . '%';
+              $candidateStmt->execute([$like, $like, $like, $like, $like]);
             $resourceCandidates = $candidateStmt->fetchAll();
         }
 
@@ -167,16 +168,17 @@ final class ReservationController extends BaseController
                  FROM resources
                  WHERE is_active = 1
                    AND (
-                        title LIKE :like
-                        OR isbn_13 LIKE :like
-                        OR publisher LIKE :like
-                        OR description LIKE :like
-                        OR authors LIKE :like
+                                                title LIKE ?
+                                                OR isbn_13 LIKE ?
+                                                OR publisher LIKE ?
+                                                OR description LIKE ?
+                                                OR authors LIKE ?
                    )
                  ORDER BY available_copies DESC, title ASC
                  LIMIT 2"
             );
-            $matchStmt->execute([':like' => '%' . $resourceQuery . '%']);
+                        $like = '%' . $resourceQuery . '%';
+                        $matchStmt->execute([$like, $like, $like, $like, $like]);
             $matches = $matchStmt->fetchAll();
 
             if (count($matches) === 0) {

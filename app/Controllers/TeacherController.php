@@ -524,6 +524,155 @@ final class TeacherController
         ], 'layouts/panel'));
     }
 
+    public function addGroupStudent(Request $request, string $id): Response
+    {
+        $authUser = $this->resolveAuthUser();
+        if ($authUser === null) {
+            Session::destroy();
+            return Response::redirect(BASE_URL . '/login');
+        }
+
+        if (!hash_equals((string) Session::get('_csrf_token', ''), (string) $request->post('_csrf_token', ''))) {
+            Session::flash('error', 'Token de seguridad inválido.');
+            return Response::redirect(BASE_URL . '/teacher/groups/' . (int) $id);
+        }
+
+        $teacherId = (int) $authUser['id'];
+        $groupId = (int) $id;
+        $studentId = (int) $request->post('student_id', 0);
+
+        if ($groupId <= 0 || $studentId <= 0) {
+            Session::flash('error', 'Debes seleccionar un estudiante válido.');
+            return Response::redirect(BASE_URL . '/teacher/groups/' . $groupId);
+        }
+
+        $groupStmt = $this->db->prepare('SELECT id, is_active FROM teacher_groups WHERE id = ? AND teacher_id = ? LIMIT 1');
+        $groupStmt->execute([$groupId, $teacherId]);
+        $group = $groupStmt->fetch();
+
+        if (!$group) {
+            Session::flash('error', 'Grupo no encontrado.');
+            return Response::redirect(BASE_URL . '/teacher/groups');
+        }
+
+        if ((int) ($group['is_active'] ?? 0) !== 1) {
+            Session::flash('error', 'No puedes agregar estudiantes a un grupo inactivo.');
+            return Response::redirect(BASE_URL . '/teacher/groups/' . $groupId);
+        }
+
+        $studentStmt = $this->db->prepare(
+            "SELECT id
+             FROM users
+             WHERE id = ?
+               AND status = 'active'
+               AND role = 'user'
+             LIMIT 1"
+        );
+        $studentStmt->execute([$studentId]);
+        if (!$studentStmt->fetch()) {
+            Session::flash('error', 'El estudiante seleccionado no existe o no está activo.');
+            return Response::redirect(BASE_URL . '/teacher/groups/' . $groupId);
+        }
+
+        $existsStmt = $this->db->prepare('SELECT 1 FROM teacher_group_students WHERE group_id = ? AND student_id = ? LIMIT 1');
+        $existsStmt->execute([$groupId, $studentId]);
+        if ($existsStmt->fetch()) {
+            Session::flash('info', 'El estudiante ya pertenece a este grupo.');
+            return Response::redirect(BASE_URL . '/teacher/groups/' . $groupId);
+        }
+
+        $this->db->beginTransaction();
+        try {
+            $this->db->prepare('INSERT INTO teacher_group_students (group_id, student_id, added_at) VALUES (?, ?, NOW())')
+                ->execute([$groupId, $studentId]);
+
+            $this->db->prepare(
+                "INSERT INTO reading_assignment_students (assignment_id, student_id, status, updated_at)
+                 SELECT ra.id, ?, 'pending', NOW()
+                 FROM reading_assignments ra
+                 WHERE ra.group_id = ?
+                   AND ra.is_active = 1
+                   AND NOT EXISTS (
+                       SELECT 1
+                       FROM reading_assignment_students ras
+                       WHERE ras.assignment_id = ra.id
+                         AND ras.student_id = ?
+                   )"
+            )->execute([$studentId, $groupId, $studentId]);
+
+            $this->db->commit();
+        } catch (\Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
+
+        Session::flash('success', 'Estudiante agregado al grupo correctamente.');
+        return Response::redirect(BASE_URL . '/teacher/groups/' . $groupId);
+    }
+
+    public function removeGroupStudent(Request $request, string $id, string $studentId = ''): Response
+    {
+        $authUser = $this->resolveAuthUser();
+        if ($authUser === null) {
+            Session::destroy();
+            return Response::redirect(BASE_URL . '/login');
+        }
+
+        if (!hash_equals((string) Session::get('_csrf_token', ''), (string) $request->post('_csrf_token', ''))) {
+            Session::flash('error', 'Token de seguridad inválido.');
+            return Response::redirect(BASE_URL . '/teacher/groups/' . (int) $id);
+        }
+
+        $teacherId = (int) $authUser['id'];
+        $groupId = (int) $id;
+        $stuId = (int) $studentId;
+
+        if ($groupId <= 0 || $stuId <= 0) {
+            Session::flash('error', 'Parámetros inválidos para quitar estudiante.');
+            return Response::redirect(BASE_URL . '/teacher/groups/' . $groupId);
+        }
+
+        $groupStmt = $this->db->prepare('SELECT id FROM teacher_groups WHERE id = ? AND teacher_id = ? LIMIT 1');
+        $groupStmt->execute([$groupId, $teacherId]);
+        if (!$groupStmt->fetch()) {
+            Session::flash('error', 'Grupo no encontrado.');
+            return Response::redirect(BASE_URL . '/teacher/groups');
+        }
+
+        $this->db->beginTransaction();
+        try {
+            $deleteStmt = $this->db->prepare('DELETE FROM teacher_group_students WHERE group_id = ? AND student_id = ?');
+            $deleteStmt->execute([$groupId, $stuId]);
+
+            if ($deleteStmt->rowCount() > 0) {
+                $this->db->prepare(
+                    "DELETE ras
+                     FROM reading_assignment_students ras
+                     JOIN reading_assignments ra ON ra.id = ras.assignment_id
+                     WHERE ra.group_id = ?
+                       AND ras.student_id = ?"
+                )->execute([$groupId, $stuId]);
+            }
+
+            $this->db->commit();
+        } catch (\Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
+
+        if ($deleteStmt->rowCount() > 0) {
+            Session::flash('success', 'Estudiante removido del grupo.');
+        } else {
+            Session::flash('info', 'El estudiante ya no estaba en este grupo.');
+        }
+
+        return Response::redirect(BASE_URL . '/teacher/groups/' . $groupId);
+    }
+
     public function showGroup(Request $request, string $id): Response
     {
         $authUser = $this->resolveAuthUser();
@@ -581,6 +730,22 @@ final class TeacherController
         $studentsStmt->execute([$groupId]);
         $students = $studentsStmt->fetchAll();
 
+                $availableStudentsStmt = $this->db->prepare(
+                        "SELECT u.id, u.name, u.email, u.user_number
+                         FROM users u
+                         WHERE u.status = 'active'
+                             AND u.role = 'user'
+                             AND NOT EXISTS (
+                                     SELECT 1
+                                     FROM teacher_group_students tgs
+                                     WHERE tgs.group_id = :group_id
+                                         AND tgs.student_id = u.id
+                             )
+                         ORDER BY u.name ASC"
+                );
+                $availableStudentsStmt->execute([':group_id' => $groupId]);
+                $availableStudents = $availableStudentsStmt->fetchAll();
+
         $assignmentsStmt = $this->db->prepare(
             "SELECT
                 ra.id,
@@ -629,6 +794,8 @@ final class TeacherController
             'summary' => $summary,
             'students' => $students,
             'assignments' => $assignments,
+            'available_students' => $availableStudents,
+            'csrf' => Session::get('_csrf_token', ''),
         ], 'layouts/panel'));
     }
 

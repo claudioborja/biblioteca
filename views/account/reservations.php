@@ -238,9 +238,12 @@ $resourceSearch = trim((string) ($resource_search ?? ''));
         li.setAttribute('aria-selected', 'false');
         li.className = 'flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-surface-container transition-colors duration-100 group';
 
+        const isDigital = String(book.type || '') === 'digital';
         const isAvailable = Number(book.available || 0) > 0;
-        const badgeColor = isAvailable ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700';
-        const badgeText = isAvailable ? 'Disponible' : 'Sin ejemplares';
+        const badgeColor = isDigital
+            ? 'bg-sky-100 text-sky-700'
+            : (isAvailable ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700');
+        const badgeText = isDigital ? 'Digital' : (isAvailable ? 'Disponible' : 'Sin ejemplares');
 
         const coverHtml = book.cover
             ? `<img src="${escHtml(book.cover)}" alt="" class="w-10 h-14 object-cover rounded-[0.375rem] shrink-0 shadow-sm" loading="lazy">`
@@ -279,7 +282,7 @@ $resourceSearch = trim((string) ($resource_search ?? ''));
 
         if (books.length === 0) {
             header.textContent = 'Sin resultados';
-            list.innerHTML = '<li class="px-4 py-4 text-center text-sm text-on-surface-subtle">No se encontraron recursos físicos para reservar.</li>';
+            list.innerHTML = '<li class="px-4 py-4 text-center text-sm text-on-surface-subtle">No se encontraron recursos para reservar.</li>';
             openDrop();
             return;
         }
@@ -300,9 +303,7 @@ $resourceSearch = trim((string) ($resource_search ?? ''));
             .then((r) => r.json())
             .then((data) => {
                 spinner.classList.add('hidden');
-                const books = Array.isArray(data)
-                    ? data.filter((b) => String(b.type || '') !== 'digital')
-                    : [];
+                const books = Array.isArray(data) ? data : [];
                 renderResults(books);
             })
             .catch((err) => {

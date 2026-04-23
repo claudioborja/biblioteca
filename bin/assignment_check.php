@@ -26,7 +26,9 @@ $mailQueue = new MailQueueService($pdo);
 $logger->info('Assignment check started');
 
 $remindersSent = 0;
+$remindersSkippedCooldown = 0;
 $expiredCount  = 0;
+$reminderCooldownHours = 24;
 
 // 1. Recordatorios 48h antes del vencimiento
 $reminderStmt = $pdo->query("
@@ -55,6 +57,18 @@ foreach ($reminderStmt as $assignment) {
     $pendingStudents = $pendingStmt->fetchAll();
 
     foreach ($pendingStudents as $student) {
+        $subject = sprintf('[ASSIGNMENT_REMINDER][#%d] Recordatorio de lectura', (int) $assignment['id']);
+        $alreadyQueuedOrSentRecently = $mailQueue->hasRecentQueuedEmail(
+            (string) ($student['email'] ?? ''),
+            $subject,
+            $reminderCooldownHours
+        );
+
+        if ($alreadyQueuedOrSentRecently) {
+            $remindersSkippedCooldown++;
+            continue;
+        }
+
         $mailQueue->enqueueAssignmentReminder($student, $assignment);
         $remindersSent++;
     }
@@ -111,7 +125,8 @@ foreach ($expiredStmt as $assignment) {
 
 $logger->info("Assignment check finished", [
     'reminders_sent' => $remindersSent,
+    'reminders_skipped_cooldown' => $remindersSkippedCooldown,
     'expired_count'  => $expiredCount,
 ]);
 
-echo "Recordatorios: {$remindersSent}, Asignaciones vencidas: {$expiredCount}\n";
+echo "Recordatorios: {$remindersSent}, Omitidos por cooldown: {$remindersSkippedCooldown}, Asignaciones vencidas: {$expiredCount}\n";

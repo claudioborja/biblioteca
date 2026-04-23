@@ -196,6 +196,35 @@ final class MailQueueService
         ]);
     }
 
+    public function hasRecentQueuedEmail(string $toEmail, string $subject, int $cooldownHours = 24): bool
+    {
+        $toEmail = trim($toEmail);
+        $subject = trim($subject);
+        $cooldownHours = max(1, $cooldownHours);
+
+        if ($toEmail === '' || $subject === '') {
+            return false;
+        }
+
+        $cutoff = (new \DateTimeImmutable("-{$cooldownHours} hours"))->format('Y-m-d H:i:s');
+
+        $stmt = $this->db->prepare(
+            'SELECT id
+             FROM email_queue
+             WHERE to_email = ?
+               AND subject = ?
+               AND (
+                    status = \'pending\'
+                    OR (status = \'sent\' AND sent_at IS NOT NULL AND sent_at >= ?)
+               )
+             LIMIT 1'
+        );
+
+        $stmt->execute([$toEmail, $subject, $cutoff]);
+
+        return $stmt->fetchColumn() !== false;
+    }
+
     public function enqueueDueReminder(array $loan): int
     {
         $loanId = (int) ($loan['id'] ?? 0);

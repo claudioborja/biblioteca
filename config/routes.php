@@ -56,6 +56,8 @@ $router->group(['prefix' => '/teacher', 'middleware' => ['auth', 'role:teacher,a
     $router->get('/groups/create', [Controllers\TeacherController::class, 'createGroup'], 'teacher.group.create');
     $router->post('/groups', [Controllers\TeacherController::class, 'storeGroup'], 'teacher.group.store');
     $router->get('/groups/{id}', [Controllers\TeacherController::class, 'showGroup'], 'teacher.group.show');
+    $router->post('/groups/{id}/students', [Controllers\TeacherController::class, 'addGroupStudent'], 'teacher.group.student.add');
+    $router->post('/groups/{id}/students/{studentId}/remove', [Controllers\TeacherController::class, 'removeGroupStudent'], 'teacher.group.student.remove');
     $router->get('/groups/{id}/edit', [Controllers\TeacherController::class, 'editGroup'], 'teacher.group.edit');
     $router->post('/groups/{id}', [Controllers\TeacherController::class, 'updateGroup'], 'teacher.group.update');
     $router->get('/groups/{id}/activity', [Controllers\TeacherController::class, 'groupActivity'], 'teacher.group.activity');

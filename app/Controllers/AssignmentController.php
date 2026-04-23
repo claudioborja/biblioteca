@@ -117,19 +117,23 @@ final class AssignmentController
                 ra.description,
                 ra.due_date,
                 ra.is_active,
-                ras.status,
+                COALESCE(ras.status, 'pending') AS status,
                 ras.completed_at,
-                ras.updated_at,
+                COALESCE(ras.updated_at, ra.created_at) AS updated_at,
                 tg.name AS group_name,
                 b.title AS resource_title,
                 b.authors AS resource_authors
-             FROM reading_assignment_students ras
-             JOIN reading_assignments ra ON ra.id = ras.assignment_id
-             JOIN teacher_groups tg ON tg.id = ra.group_id
+             FROM teacher_group_students tgs
+             JOIN teacher_groups tg ON tg.id = tgs.group_id
+             JOIN reading_assignments ra ON ra.group_id = tgs.group_id AND ra.is_active = 1
              JOIN resources b ON b.id = ra.resource_id
-             WHERE ras.student_id = ?
+             LEFT JOIN reading_assignment_students ras
+                    ON ras.assignment_id = ra.id
+                   AND ras.student_id = tgs.student_id
+             WHERE tgs.student_id = ?
+               AND tg.is_active = 1
              ORDER BY
-                CASE ras.status
+                CASE COALESCE(ras.status, 'pending')
                     WHEN 'pending' THEN 1
                     WHEN 'in_progress' THEN 2
                     WHEN 'completed' THEN 3
@@ -188,7 +192,7 @@ final class AssignmentController
 
         // Physical and digital active resources
         $resources = $this->db->query(
-            "SELECT id, title, authors, isbn
+            "SELECT id, title, authors, isbn_13 AS isbn
              FROM resources
              WHERE is_active = 1
              ORDER BY title ASC"
@@ -368,7 +372,7 @@ final class AssignmentController
                 b.id    AS resource_id,
                 b.title AS resource_title,
                 b.authors AS resource_authors,
-                b.isbn  AS resource_isbn,
+                b.isbn_13 AS resource_isbn,
                 COUNT(ras.student_id) AS total_students,
                 SUM(CASE WHEN ras.status = 'pending'     THEN 1 ELSE 0 END) AS pending_count,
                 SUM(CASE WHEN ras.status = 'in_progress' THEN 1 ELSE 0 END) AS in_progress_count,
@@ -381,7 +385,7 @@ final class AssignmentController
              GROUP BY
                 ra.id, ra.title, ra.description, ra.due_date, ra.is_active, ra.created_at,
                 tg.id, tg.name, tg.school_year,
-                b.id, b.title, b.authors, b.isbn"
+                b.id, b.title, b.authors, b.isbn_13"
         );
         $assignStmt->execute([$assignmentId, $teacherId]);
         $assignment = $assignStmt->fetch();

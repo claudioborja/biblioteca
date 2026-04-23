@@ -1,0 +1,47 @@
+[
+    {
+        "key": "smtp_enabled",
+        "value": "false",
+        "type": "boolean"
+    },
+    {
+        "key": "smtp_encryption",
+        "value": "tls",
+        "type": "string"
+    },
+    {
+        "key": "smtp_from_address",
+        "value": "biblioteca@istel.edu.ec",
+        "type": "string"
+    },
+    {
+        "key": "smtp_from_name",
+        "value": "Biblioteca ISTEL",
+        "type": "string"
+    },
+    {
+        "key": "smtp_host",
+        "value": "smtp.gmail.com",
+        "type": "string"
+    },
+    {
+        "key": "smtp_password",
+        "value": "kbjgvouocltsbcfn",
+        "type": "string"
+    },
+    {
+        "key": "smtp_port",
+        "value": "587",
+        "type": "integer"
+    },
+    {
+        "key": "smtp_timeout",
+        "value": "30",
+        "type": "integer"
+    },
+    {
+        "key": "smtp_username",
+        "value": "biblioteca_notificaciones@istel.edu.ec",
+        "type": "string"
+    }
+]

@@ -83,7 +83,7 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
         <div class="grid gap-3 md:grid-cols-<?= $cfg['show_inventory'] ? '5' : '4' ?>">
             <div class="md:col-span-2">
                 <label for="type-search" class="label-sm">Buscar</label>
-                <input id="type-search" type="text" placeholder="Título, autor, ISBN..."
+                <input id="type-search" type="text" placeholder="<?= $e($cfg['search_placeholder'] ?? 'Titulo, autor, ISBN...') ?>"
                     class="mt-1 w-full rounded-xl border border-outline-variant bg-surface-container-lowest px-3 py-2.5 text-sm text-on-surface placeholder-on-surface-subtle focus:border-primary focus:outline-none" />
             </div>
             <div>
@@ -215,7 +215,7 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
                         <td class="px-4 py-3.5">
                             <p class="font-semibold text-on-surface" data-cell="title"><?= $e($r['title'] ?? '') ?></p>
                             <?php if ($r['isbn_13'] ?? ''): ?>
-                            <p class="text-xs text-on-surface-subtle mt-0.5">ISBN: <?= $e($r['isbn_13']) ?></p>
+                            <p class="text-xs text-on-surface-subtle mt-0.5"><?= $e($cfg['identifier_prefix'] ?? 'ISBN:') ?> <?= $e($r['isbn_13']) ?></p>
                             <?php endif; ?>
                             <?php if ($cfg['show_digital_url'] && ($r['digital_url'] ?? '')): ?>
                             <a href="<?= $e($r['digital_url']) ?>" target="_blank" rel="noopener"
@@ -412,14 +412,14 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
                         <!-- Step 0: Identificación -->
                         <div id="wizard-step-0" data-wizard-panel="0" class="space-y-4">
                             <div>
-                                <label class="label-sm">Título <span class="text-red-500">*</span></label>
-                                <input type="text" name="title" class="<?= $inputClass ?>" placeholder="Título completo" required>
+                                <label class="label-sm"><?= $e($cfg['title_label'] ?? 'Titulo') ?> <span class="text-red-500">*</span></label>
+                                <input type="text" name="title" class="<?= $inputClass ?>" placeholder="<?= $e($cfg['title_placeholder'] ?? 'Titulo completo') ?>" required>
                             </div>
 
                             <?php if ($cfg['show_isbn']): ?>
                             <div>
-                                <label class="label-sm">ISBN</label>
-                                <input type="text" name="isbn" class="<?= $inputClass ?>" placeholder="978-X-XXXX-XXXX-X">
+                                <label class="label-sm"><?= $e($cfg['identifier_label'] ?? 'ISBN') ?></label>
+                                <input type="text" name="isbn" class="<?= $inputClass ?>" placeholder="<?= $e($cfg['identifier_placeholder'] ?? '978-X-XXXX-XXXX-X') ?>">
                             </div>
                             <?php endif; ?>
 
@@ -473,11 +473,11 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
                             <?php if ($cfg['show_digital_url']): ?>
                             <div>
                                 <label class="label-sm">
-                                    URL de acceso
+                                    <?= $e($cfg['digital_url_label'] ?? 'URL de acceso') ?>
                                     <?= $cfg['digital_url_required'] ? '<span class="text-red-500">*</span>' : '' ?>
                                 </label>
                                 <input type="url" name="digital_url" class="<?= $inputClass ?>"
-                                       placeholder="https://..."
+                                       placeholder="<?= $e($cfg['digital_url_placeholder'] ?? 'https://...') ?>"
                                        <?= $cfg['digital_url_required'] ? 'required' : '' ?>>
                             </div>
                             <?php endif; ?>

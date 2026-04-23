@@ -269,6 +269,9 @@ final class AdminController extends BaseController
             }
         }
 
+        $systemAudit = $this->buildSystemAuditData();
+        $securityAudit = $this->buildSecurityAuditData();
+
         return Response::html($this->view->render('admin/audit/index', [
             'title' => 'Auditoria - ' . ($settings['library_name'] ?? 'Biblioteca'),
             'settings' => $settings,
@@ -288,7 +291,536 @@ final class AdminController extends BaseController
             'mail_summary' => $mailSummary,
             'email_source_filter' => $emailSourceFilter,
             'email_status_filter' => $emailStatusFilter,
+            'security_summary' => $securityAudit['summary'],
+            'security_controls' => $securityAudit['controls'],
+            'security_events' => $securityAudit['events'],
+            'security_throttle_entries' => $securityAudit['throttle_entries'],
+            'system_summary' => $systemAudit['summary'],
+            'system_log_files' => $systemAudit['log_files'],
+            'system_jobs' => $systemAudit['jobs'],
+            'system_recent_logs' => $systemAudit['recent_logs'],
         ], 'layouts/panel'));
+    }
+
+    /**
+     * Build security-audit metrics from auth log, throttle files and audit table.
+     *
+     * @return array{summary: array<string, int|string>, controls: array<int, array<string, string>>, events: array<int, array<string, string>>, throttle_entries: array<int, array<string, int|string>>}
+     */
+    private function buildSecurityAuditData(): array
+    {
+        $now = time();
+        $window24h = $now - 86400;
+        $lockoutSeconds = 900;
+        $maxAttempts = 5;
+
+        $authEvents = [];
+        $authLogPath = BASE_PATH . '/storage/logs/auth.log';
+        foreach ($this->tailLogFile($authLogPath, 600) as $line) {
+            $parsed = $this->parseAuthLogLine($line);
+            if ($parsed !== null) {
+                $authEvents[] = $parsed;
+            }
+        }
+
+        $dbSecurityStmt = $this->db->prepare(
+            "SELECT a.action, a.ip_address, a.created_at, a.new_values, u.name AS user_name
+             FROM audit_logs a
+             LEFT JOIN users u ON u.id = a.user_id
+             WHERE a.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+               AND (
+                   a.action LIKE 'login_%'
+                   OR a.action LIKE '%password%'
+                   OR a.action LIKE '%role%'
+                   OR a.action LIKE '%verify%'
+                   OR a.action LIKE '%reset%'
+               )
+             ORDER BY a.created_at DESC
+             LIMIT 160"
+        );
+        $dbSecurityStmt->execute();
+        $dbSecurityRows = $dbSecurityStmt->fetchAll();
+
+        $events = [];
+
+        foreach ($authEvents as $event) {
+            $events[] = [
+                'occurred_at' => (string) ($event['occurred_at'] ?? ''),
+                'action' => (string) ($event['action'] ?? ''),
+                'severity' => (string) ($event['severity'] ?? 'info'),
+                'source' => 'auth.log',
+                'ip' => (string) ($event['ip'] ?? '-'),
+                'actor' => (string) ($event['actor'] ?? 'Sistema'),
+                'details' => (string) ($event['details'] ?? ''),
+            ];
+        }
+
+        foreach ($dbSecurityRows as $row) {
+            $action = (string) ($row['action'] ?? 'security_event');
+            $details = '';
+            $rawPayload = (string) ($row['new_values'] ?? '');
+            if ($rawPayload !== '') {
+                $decoded = json_decode($rawPayload, true);
+                if (is_array($decoded)) {
+                    if (isset($decoded['target_email'])) {
+                        $details = 'Objetivo: ' . (string) $decoded['target_email'];
+                    } elseif (isset($decoded['to_email'])) {
+                        $details = 'Correo: ' . (string) $decoded['to_email'];
+                    }
+                }
+            }
+
+            $events[] = [
+                'occurred_at' => (string) ($row['created_at'] ?? ''),
+                'action' => $action,
+                'severity' => $this->classifySecuritySeverity($action),
+                'source' => 'audit_logs',
+                'ip' => (string) ($row['ip_address'] ?? '-'),
+                'actor' => (string) (($row['user_name'] ?? '') !== '' ? $row['user_name'] : 'Sistema'),
+                'details' => $details,
+            ];
+        }
+
+        usort($events, static function (array $a, array $b): int {
+            return strcmp((string) ($b['occurred_at'] ?? ''), (string) ($a['occurred_at'] ?? ''));
+        });
+        $events = array_slice($events, 0, 120);
+
+        $failed24h = 0;
+        $success24h = 0;
+        $passwordReset24h = 0;
+        $events24h = 0;
+        $ips24h = [];
+
+        foreach ($events as $event) {
+            $action = mb_strtolower((string) ($event['action'] ?? ''));
+            $ts = strtotime((string) ($event['occurred_at'] ?? '')) ?: 0;
+            if ($ts >= $window24h) {
+                $events24h++;
+                $ip = trim((string) ($event['ip'] ?? ''));
+                if ($ip !== '' && $ip !== '-' && $ip !== 'cli') {
+                    $ips24h[$ip] = true;
+                }
+                if ($action === 'login_failed') {
+                    $failed24h++;
+                } elseif ($action === 'login_success') {
+                    $success24h++;
+                } elseif ($action === 'password_reset_requested') {
+                    $passwordReset24h++;
+                }
+            }
+        }
+
+        $throttleDir = BASE_PATH . '/storage/throttle';
+        $throttleEntries = [];
+        $activeLocks = 0;
+        $throttleFiles = glob($throttleDir . '/*.json') ?: [];
+
+        foreach ($throttleFiles as $path) {
+            if (!is_file($path)) {
+                continue;
+            }
+
+            $raw = @file_get_contents($path);
+            $decoded = is_string($raw) ? json_decode($raw, true) : null;
+            if (!is_array($decoded)) {
+                continue;
+            }
+
+            $attempts = (int) ($decoded['attempts'] ?? 0);
+            $lastAttempt = (int) ($decoded['last_attempt'] ?? 0);
+            if ($lastAttempt <= 0) {
+                $mtime = (int) @filemtime($path);
+                $lastAttempt = $mtime > 0 ? $mtime : 0;
+            }
+
+            $expiresAt = $lastAttempt + $lockoutSeconds;
+            $remaining = $expiresAt - $now;
+
+            if ($remaining <= 0) {
+                continue;
+            }
+
+            $isLocked = $attempts >= $maxAttempts;
+            if ($isLocked) {
+                $activeLocks++;
+            }
+
+            $throttleEntries[] = [
+                'key' => basename($path),
+                'attempts' => $attempts,
+                'status' => $isLocked ? 'Bloqueado' : 'En observación',
+                'last_attempt' => date('Y-m-d H:i:s', $lastAttempt),
+                'remaining_seconds' => max(0, $remaining),
+            ];
+        }
+
+        usort($throttleEntries, static function (array $a, array $b): int {
+            return ((int) ($b['remaining_seconds'] ?? 0)) <=> ((int) ($a['remaining_seconds'] ?? 0));
+        });
+
+        $restrictedUsers = (int) $this->db->query("SELECT COUNT(*) FROM users WHERE status IN ('suspended','blocked')")->fetchColumn();
+        $roleChanges30d = (int) $this->db->query(
+            "SELECT COUNT(*)
+             FROM audit_logs
+             WHERE action = 'user_role_changed'
+               AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+        )->fetchColumn();
+
+        $sampleHash = (string) ($this->db->query("SELECT password_hash FROM users WHERE password_hash IS NOT NULL AND password_hash <> '' ORDER BY id DESC LIMIT 1")->fetchColumn() ?: '');
+        $passwordAlgo = str_starts_with($sampleHash, '$argon2id$')
+            ? 'Argon2id'
+            : (str_starts_with($sampleHash, '$2y$') ? 'Bcrypt' : 'Desconocido');
+
+        $controls = [
+            [
+                'control' => 'CSRF Middleware',
+                'status' => class_exists(\Middleware\CsrfMiddleware::class) ? 'Activo' : 'No disponible',
+                'detail' => 'Protección de formularios por token de sesión.',
+            ],
+            [
+                'control' => 'Rate limiting de login',
+                'status' => is_dir($throttleDir) ? 'Activo' : 'No disponible',
+                'detail' => 'Ventana de bloqueo: 15 minutos, máximo 5 intentos.',
+            ],
+            [
+                'control' => 'Security headers middleware',
+                'status' => $this->isSecurityHeadersMiddlewareActive() ? 'Aplicado' : 'No aplicado',
+                'detail' => 'X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy.',
+            ],
+            [
+                'control' => 'Canal HTTPS detectado',
+                'status' => $this->isHttpsEnabled() ? 'Sí' : 'No',
+                'detail' => 'Detección por variables del servidor para la solicitud actual.',
+            ],
+            [
+                'control' => 'Algoritmo de hash de contraseña',
+                'status' => $passwordAlgo,
+                'detail' => 'Muestra tomada del último hash registrado en usuarios.',
+            ],
+            [
+                'control' => 'Directorio de logs escribible',
+                'status' => is_writable(BASE_PATH . '/storage/logs') ? 'Sí' : 'No',
+                'detail' => 'Necesario para auditoría de auth y eventos críticos.',
+            ],
+        ];
+
+        return [
+            'summary' => [
+                'events_24h' => $events24h,
+                'failed_logins_24h' => $failed24h,
+                'successful_logins_24h' => $success24h,
+                'password_resets_24h' => $passwordReset24h,
+                'unique_ips_24h' => count($ips24h),
+                'active_locks' => $activeLocks,
+                'restricted_accounts' => $restrictedUsers,
+                'role_changes_30d' => $roleChanges30d,
+                'throttle_records' => count($throttleEntries),
+                'generated_at' => date('Y-m-d H:i:s'),
+            ],
+            'controls' => $controls,
+            'events' => array_slice($events, 0, 80),
+            'throttle_entries' => array_slice($throttleEntries, 0, 40),
+        ];
+    }
+
+    /**
+     * Parse a line from storage/logs/auth.log.
+     *
+     * @return array<string, string>|null
+     */
+    private function parseAuthLogLine(string $line): ?array
+    {
+        $line = trim($line);
+        if ($line === '') {
+            return null;
+        }
+
+        $pattern = '/^\[(?<ts>[^\]]+)\]\s+action=(?<action>\S+)\s+user_id=(?<user>\S+)\s+ip=(?<ip>\S*)\s*(?<ctx>.*)$/';
+        if (!preg_match($pattern, $line, $match)) {
+            return null;
+        }
+
+        $action = (string) ($match['action'] ?? 'event');
+        $contextRaw = trim((string) ($match['ctx'] ?? ''));
+        $details = '';
+
+        if ($contextRaw !== '') {
+            $decoded = json_decode($contextRaw, true);
+            if (is_array($decoded)) {
+                foreach (['reset_url', 'token', 'password', 'password_hash'] as $sensitiveKey) {
+                    if (array_key_exists($sensitiveKey, $decoded)) {
+                        $decoded[$sensitiveKey] = '[redacted]';
+                    }
+                }
+                $details = json_encode($decoded, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '';
+            } else {
+                $details = $contextRaw;
+            }
+        }
+
+        return [
+            'occurred_at' => (string) ($match['ts'] ?? ''),
+            'action' => $action,
+            'severity' => $this->classifySecuritySeverity($action),
+            'ip' => (string) ($match['ip'] ?? '-'),
+            'actor' => (string) (($match['user'] ?? 'null') === 'null' ? 'Anónimo' : ('Usuario #' . (string) $match['user'])),
+            'details' => $details,
+        ];
+    }
+
+    private function classifySecuritySeverity(string $action): string
+    {
+        $action = mb_strtolower(trim($action));
+
+        if ($action === 'login_failed' || str_contains($action, 'failed') || str_contains($action, 'blocked')) {
+            return 'high';
+        }
+
+        if (str_contains($action, 'password') || str_contains($action, 'role') || str_contains($action, 'reset')) {
+            return 'medium';
+        }
+
+        return 'low';
+    }
+
+    private function isSecurityHeadersMiddlewareActive(): bool
+    {
+        $pipelinePath = BASE_PATH . '/app/Core/MiddlewarePipeline.php';
+        if (!is_file($pipelinePath)) {
+            return false;
+        }
+
+        $content = (string) @file_get_contents($pipelinePath);
+        if ($content === '') {
+            return false;
+        }
+
+        return str_contains($content, 'SecurityHeadersMiddleware::class')
+            || str_contains($content, "'security'");
+    }
+
+    private function isHttpsEnabled(): bool
+    {
+        $https = (string) ($_SERVER['HTTPS'] ?? '');
+        $forwardedProto = (string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '');
+        $forwardedSsl = (string) ($_SERVER['HTTP_X_FORWARDED_SSL'] ?? '');
+
+        return ($https !== '' && $https !== 'off')
+            || mb_strtolower($forwardedProto) === 'https'
+            || mb_strtolower($forwardedSsl) === 'on';
+    }
+
+    /**
+     * Build system-audit data from local log files and monitored cron/task logs.
+     * This is intentionally file-based so it works in limited hosting environments.
+     *
+     * @return array{summary: array<string, int|string>, log_files: array<int, array<string, mixed>>, jobs: array<int, array<string, mixed>>, recent_logs: array<int, array<string, mixed>>}
+     */
+    private function buildSystemAuditData(): array
+    {
+        $logsDir = BASE_PATH . '/storage/logs';
+        $logFiles = [];
+        $recentLogs = [];
+        $totalLogSize = 0;
+        $updatedLast24h = 0;
+        $errorLikeFiles = 0;
+
+        $paths = glob($logsDir . '/*.log') ?: [];
+        rsort($paths);
+
+        foreach ($paths as $path) {
+            if (!is_file($path)) {
+                continue;
+            }
+
+            $basename = basename($path);
+            $size = (int) @filesize($path);
+            $mtime = (int) @filemtime($path);
+            $modifiedAt = $mtime > 0 ? date('Y-m-d H:i:s', $mtime) : null;
+            $category = str_contains($basename, 'cron-')
+                ? 'Tarea programada'
+                : (str_contains($basename, 'php') ? 'PHP' : 'Aplicación');
+
+            $logFiles[] = [
+                'name' => $basename,
+                'path' => $path,
+                'size_bytes' => $size,
+                'size_human' => $this->humanFileSize($size),
+                'modified_at' => $modifiedAt,
+                'category' => $category,
+            ];
+
+            $totalLogSize += $size;
+
+            if ($mtime >= time() - 86400) {
+                $updatedLast24h++;
+            }
+
+            if (str_contains($basename, 'php') || str_contains($basename, 'error') || str_contains($basename, 'critical')) {
+                $errorLikeFiles++;
+            }
+        }
+
+        usort($logFiles, static fn(array $a, array $b): int => strcmp((string) ($b['modified_at'] ?? ''), (string) ($a['modified_at'] ?? '')));
+
+        $recentLogCandidates = array_slice($logFiles, 0, 4);
+        foreach ($recentLogCandidates as $logFile) {
+            $recentLines = $this->tailLogFile((string) ($logFile['path'] ?? ''), 6);
+            foreach ($recentLines as $line) {
+                if (trim($line) === '') {
+                    continue;
+                }
+                $recentLogs[] = [
+                    'file' => (string) ($logFile['name'] ?? ''),
+                    'modified_at' => (string) ($logFile['modified_at'] ?? ''),
+                    'line' => trim($line),
+                ];
+            }
+        }
+        $recentLogs = array_slice($recentLogs, 0, 12);
+
+        $jobs = [];
+        $jobsRecent = 0;
+        $jobsStale = 0;
+        $cronLogsByName = [];
+
+        foreach ($logFiles as $logFile) {
+            $logName = (string) ($logFile['name'] ?? '');
+            if (str_starts_with($logName, 'cron-') && str_ends_with($logName, '.log')) {
+                $cronLogsByName[$logName] = $logFile;
+            }
+        }
+
+        $scriptPaths = glob(BASE_PATH . '/bin/*.php') ?: [];
+        sort($scriptPaths);
+
+        foreach ($scriptPaths as $scriptPath) {
+            $script = basename($scriptPath);
+            $scriptStem = pathinfo($script, PATHINFO_FILENAME);
+            $normalizedStem = str_replace('_', '-', $scriptStem);
+
+            $candidateLogs = [
+                'cron-' . $normalizedStem . '.log',
+            ];
+
+            if (str_ends_with($scriptStem, '_check')) {
+                $withoutSuffix = substr($scriptStem, 0, -6);
+                if ($withoutSuffix !== '') {
+                    $candidateLogs[] = 'cron-' . str_replace('_', '-', $withoutSuffix) . '.log';
+                }
+            }
+
+            $matchedLogName = null;
+            foreach ($candidateLogs as $candidateLog) {
+                if (isset($cronLogsByName[$candidateLog])) {
+                    $matchedLogName = $candidateLog;
+                    break;
+                }
+            }
+
+            if ($matchedLogName === null) {
+                $stemTokens = array_values(array_filter(explode('-', $normalizedStem), static fn(string $token): bool => $token !== ''));
+                foreach (array_keys($cronLogsByName) as $cronLogName) {
+                    foreach ($stemTokens as $token) {
+                        if (strlen($token) >= 4 && str_contains($cronLogName, $token)) {
+                            $matchedLogName = $cronLogName;
+                            break 2;
+                        }
+                    }
+                }
+            }
+
+            $matchedLog = $matchedLogName !== null ? ($cronLogsByName[$matchedLogName] ?? null) : null;
+            $logMtime = 0;
+            $logSize = 0;
+
+            if (is_array($matchedLog)) {
+                $logMtime = strtotime((string) ($matchedLog['modified_at'] ?? '')) ?: 0;
+                $logSize = (int) ($matchedLog['size_bytes'] ?? 0);
+            }
+
+            $secondsSinceUpdate = $logMtime > 0 ? time() - $logMtime : null;
+
+            $status = 'Sin registro';
+            if ($secondsSinceUpdate !== null) {
+                if ($secondsSinceUpdate <= 86400) {
+                    $status = 'Reciente';
+                    $jobsRecent++;
+                } elseif ($secondsSinceUpdate <= 259200) {
+                    $status = 'Desactualizado';
+                    $jobsStale++;
+                } else {
+                    $status = 'Sin actividad reciente';
+                    $jobsStale++;
+                }
+            }
+
+            $jobs[] = [
+                'label' => ucwords(str_replace(['_', '-'], ' ', $scriptStem)),
+                'script' => $script,
+                'script_exists' => true,
+                'log_name' => $matchedLogName,
+                'log_exists' => $matchedLogName !== null,
+                'status' => $status,
+                'modified_at' => $logMtime > 0 ? date('Y-m-d H:i:s', $logMtime) : null,
+                'size_human' => $this->humanFileSize($logSize),
+            ];
+        }
+
+        usort($jobs, static function (array $a, array $b): int {
+            $aTime = strtotime((string) ($a['modified_at'] ?? '')) ?: 0;
+            $bTime = strtotime((string) ($b['modified_at'] ?? '')) ?: 0;
+            return $bTime <=> $aTime;
+        });
+
+        return [
+            'summary' => [
+                'total_log_files' => count($logFiles),
+                'total_log_size' => $this->humanFileSize($totalLogSize),
+                'updated_last_24h' => $updatedLast24h,
+                'error_like_files' => $errorLikeFiles,
+                'monitored_jobs' => count($jobs),
+                'jobs_recent' => $jobsRecent,
+                'jobs_stale' => $jobsStale,
+                'generated_at' => date('Y-m-d H:i:s'),
+            ],
+            'log_files' => array_slice($logFiles, 0, 12),
+            'jobs' => $jobs,
+            'recent_logs' => $recentLogs,
+        ];
+    }
+
+    private function tailLogFile(string $path, int $lineCount = 5): array
+    {
+        if ($path === '' || !is_file($path) || $lineCount <= 0) {
+            return [];
+        }
+
+        $lines = @file($path, FILE_IGNORE_NEW_LINES);
+        if (!is_array($lines) || $lines === []) {
+            return [];
+        }
+
+        return array_slice($lines, -$lineCount);
+    }
+
+    private function humanFileSize(int $bytes): string
+    {
+        if ($bytes < 1024) {
+            return $bytes . ' B';
+        }
+
+        $units = ['KB', 'MB', 'GB', 'TB'];
+        $size = $bytes / 1024;
+        $unitIndex = 0;
+
+        while ($size >= 1024 && $unitIndex < count($units) - 1) {
+            $size /= 1024;
+            $unitIndex++;
+        }
+
+        return number_format($size, $size >= 10 ? 0 : 1, '.', '') . ' ' . $units[$unitIndex];
     }
 
     public function settings(Request $request): Response
@@ -344,6 +876,7 @@ final class AdminController extends BaseController
             return Response::redirect(BASE_URL . '/login');
         }
 
+        $this->ensureCoreSettings();
         $this->ensureSmtpSettings();
         $this->ensureAboutSettings();
 
@@ -372,6 +905,7 @@ final class AdminController extends BaseController
             return Response::redirect(BASE_URL . '/login');
         }
 
+        $this->ensureCoreSettings();
         $this->ensureSmtpSettings();
         $this->ensureAboutSettings();
 
@@ -788,6 +1322,32 @@ final class AdminController extends BaseController
 
         $action = trim((string) $request->post('action', ''));
 
+        if ($action === 'preview_one') {
+            $id = (int) $request->post('id', 0);
+            if ($id <= 0) {
+                return new Response(json_encode(['ok' => false, 'message' => 'ID inválido.']), 422);
+            }
+
+            $stmt = $this->db->prepare(
+                "SELECT id, to_email, to_name, subject, body_html, body_text, status,
+                        scheduled_at, sent_at, created_at
+                 FROM email_queue
+                 WHERE id = ?
+                 LIMIT 1"
+            );
+            $stmt->execute([$id]);
+            $item = $stmt->fetch();
+
+            if (!$item) {
+                return new Response(json_encode(['ok' => false, 'message' => 'Correo no encontrado.']), 404);
+            }
+
+            return new Response(json_encode([
+                'ok' => true,
+                'item' => $item,
+            ]), 200);
+        }
+
         if ($action === 'retry_all_failed') {
             $stmt = $this->db->prepare(
                 "UPDATE email_queue
@@ -844,6 +1404,17 @@ final class AdminController extends BaseController
             ]), 200);
         }
 
+        if ($action === 'clear_processed') {
+            $stmt = $this->db->prepare("DELETE FROM email_queue WHERE status IN ('sent', 'failed')");
+            $stmt->execute();
+            $affected = $stmt->rowCount();
+            return new Response(json_encode([
+                'ok'      => true,
+                'message' => "Se limpiaron {$affected} correo(s) enviados/fallidos de la cola.",
+                'count'   => $affected,
+            ]), 200);
+        }
+
         return new Response(json_encode(['ok' => false, 'message' => 'Acción no reconocida.']), 422);
     }
 
@@ -894,6 +1465,56 @@ final class AdminController extends BaseController
 
         $stmt = $this->db->prepare(
             'INSERT INTO system_settings (`key`, `value`, `type`) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE `type` = VALUES(`type`)' 
+        );
+
+        foreach ($defaults as $key => [$value, $type]) {
+            $stmt->execute([$key, $value, $type]);
+        }
+    }
+
+    private function ensureCoreSettings(): void
+    {
+        $defaults = [
+            // Library
+            'library_name' => ['', 'string'],
+            'library_slogan' => ['', 'string'],
+            'library_address' => ['', 'string'],
+            'library_phone' => ['', 'string'],
+            'library_email' => ['', 'string'],
+            'library_website' => ['', 'string'],
+            'library_schedule' => ['', 'string'],
+            'library_logo' => ['', 'string'],
+            'library_favicon' => ['', 'string'],
+
+            // Loans
+            'loan_hours' => ['72', 'integer'],
+            'loan_hours_extended' => ['120', 'integer'],
+            'renewal_grace_hours' => ['2', 'integer'],
+            'max_loans_per_user' => ['3', 'integer'],
+            'max_renewals' => ['2', 'integer'],
+            'reservation_hold_hours' => ['48', 'integer'],
+            'new_acquisition_days' => ['30', 'integer'],
+
+            // Fines
+            'fine_per_hour' => ['0.05', 'decimal'],
+            'max_fine_multiplier' => ['2.00', 'decimal'],
+            'block_loans_with_fines' => ['true', 'boolean'],
+
+            // Notifications
+            'reminder_hours_before' => ['24', 'integer'],
+            'news_on_home' => ['3', 'integer'],
+
+            // System
+            'timezone' => ['America/Guayaquil', 'string'],
+            'locale' => ['es_EC', 'string'],
+            'date_format' => ['d/m/Y H:i', 'string'],
+            'currency_symbol' => ['$', 'string'],
+            'carnet_prefix' => ['BIB', 'string'],
+            'app_url' => ['', 'string'],
+        ];
+
+        $stmt = $this->db->prepare(
+            'INSERT INTO system_settings (`key`, `value`, `type`) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE `type` = VALUES(`type`)'
         );
 
         foreach ($defaults as $key => [$value, $type]) {

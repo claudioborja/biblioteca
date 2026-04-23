@@ -82,16 +82,16 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
                 <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
 
                     <div class="xl:col-span-<?= ($cfg['show_authors'] ? '2' : '3') ?>">
-                        <label class="label-sm">Título <span class="text-red-500">*</span></label>
+                        <label class="label-sm"><?= $e($cfg['title_label'] ?? 'Titulo') ?> <span class="text-red-500">*</span></label>
                         <input type="text" name="title" value="<?= $val('title') ?>"
-                               class="<?= $inputClass ?>" placeholder="Título completo" required>
+                               class="<?= $inputClass ?>" placeholder="<?= $e($cfg['title_placeholder'] ?? 'Titulo completo') ?>" required>
                     </div>
 
                     <?php if ($cfg['show_isbn']): ?>
                     <div>
-                        <label class="label-sm">ISBN</label>
+                        <label class="label-sm"><?= $e($cfg['identifier_label'] ?? 'ISBN') ?></label>
                         <input type="text" name="isbn" value="<?= $val('isbn') ?>"
-                               class="<?= $inputClass ?>" placeholder="978-X-XXXX-XXXX-X">
+                               class="<?= $inputClass ?>" placeholder="<?= $e($cfg['identifier_placeholder'] ?? '978-X-XXXX-XXXX-X') ?>">
                     </div>
                     <?php endif; ?>
 
@@ -143,11 +143,11 @@ $inputClass = 'mt-1 w-full rounded-xl border border-outline-variant bg-surface-c
                     <?php if ($cfg['show_digital_url']): ?>
                     <div class="xl:col-span-2">
                         <label class="label-sm">
-                            URL de acceso
+                            <?= $e($cfg['digital_url_label'] ?? 'URL de acceso') ?>
                             <?= $cfg['digital_url_required'] ? '<span class="text-red-500">*</span>' : '' ?>
                         </label>
                         <input type="url" name="digital_url" value="<?= $val('digital_url') ?>"
-                               class="<?= $inputClass ?>" placeholder="https://..."
+                               class="<?= $inputClass ?>" placeholder="<?= $e($cfg['digital_url_placeholder'] ?? 'https://...') ?>"
                                <?= $cfg['digital_url_required'] ? 'required' : '' ?>>
                     </div>
                     <?php endif; ?>

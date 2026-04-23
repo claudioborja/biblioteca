@@ -3,6 +3,16 @@ $e = fn(mixed $v) => htmlspecialchars((string) $v, ENT_QUOTES | ENT_SUBSTITUTE, 
 ?>
 
 <section class="p-6 lg:p-8">
+    <?php $flashSuccess = \Core\Session::getFlash('success'); if ($flashSuccess): ?>
+        <div class="mb-5 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800"><?= $e($flashSuccess) ?></div>
+    <?php endif; ?>
+    <?php $flashError = \Core\Session::getFlash('error'); if ($flashError): ?>
+        <div class="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"><?= $e($flashError) ?></div>
+    <?php endif; ?>
+    <?php $flashInfo = \Core\Session::getFlash('info'); if ($flashInfo): ?>
+        <div class="mb-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800"><?= $e($flashInfo) ?></div>
+    <?php endif; ?>
+
     <div class="mb-7 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
             <p class="label-sm">Grupo docente</p>
@@ -87,6 +97,27 @@ $e = fn(mixed $v) => htmlspecialchars((string) $v, ENT_QUOTES | ENT_SUBSTITUTE, 
                 <span class="text-xs font-semibold text-on-surface-subtle">Estado académico y bibliotecario</span>
             </div>
 
+            <form method="POST" action="<?= BASE_URL ?>/teacher/groups/<?= (int) $group['id'] ?>/students" class="mb-4 rounded-xl border border-outline-variant/50 bg-surface-container-lowest p-3">
+                <input type="hidden" name="_csrf_token" value="<?= $e((string) ($csrf ?? '')) ?>">
+                <label for="student_id" class="label-sm block mb-1.5">Agregar estudiante al grupo</label>
+                <div class="flex flex-col gap-2 sm:flex-row">
+                    <select id="student_id" name="student_id" class="flex-1 rounded-xl border border-outline-variant bg-white px-3 py-2.5 text-sm text-on-surface focus:border-primary focus:outline-none">
+                        <option value="">Selecciona un estudiante...</option>
+                        <?php foreach (($available_students ?? []) as $candidate): ?>
+                            <option value="<?= (int) $candidate['id'] ?>">
+                                <?= $e($candidate['name']) ?><?= !empty($candidate['user_number']) ? (' · ' . $e($candidate['user_number'])) : '' ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <button type="submit" class="rounded-xl gradient-scholar px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 transition-opacity">
+                        Agregar
+                    </button>
+                </div>
+                <?php if (empty($available_students ?? [])): ?>
+                    <p class="mt-2 text-xs text-on-surface-subtle">No hay estudiantes disponibles para agregar.</p>
+                <?php endif; ?>
+            </form>
+
             <?php if (empty($students)): ?>
                 <p class="body-md">No hay estudiantes registrados en este grupo.</p>
             <?php else: ?>
@@ -109,6 +140,15 @@ $e = fn(mixed $v) => htmlspecialchars((string) $v, ENT_QUOTES | ENT_SUBSTITUTE, 
                                 <span class="rounded-full px-2.5 py-1 text-xs font-semibold <?= $studentStatusClass ?>">
                                     <?= $e(ucfirst((string) $student['status'])) ?>
                                 </span>
+                            </div>
+
+                            <div class="mt-2 flex justify-end">
+                                <form method="POST" action="<?= BASE_URL ?>/teacher/groups/<?= (int) $group['id'] ?>/students/<?= (int) $student['id'] ?>/remove" onsubmit="return confirm('¿Quitar este estudiante del grupo?');">
+                                    <input type="hidden" name="_csrf_token" value="<?= $e((string) ($csrf ?? '')) ?>">
+                                    <button type="submit" class="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors">
+                                        Quitar del grupo
+                                    </button>
+                                </form>
                             </div>
 
                             <div class="mt-4 grid grid-cols-3 gap-3 text-center">

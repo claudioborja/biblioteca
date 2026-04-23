@@ -218,8 +218,7 @@ final class LoanController extends BaseController
             "UPDATE loans
              SET due_at = DATE_ADD(due_at, INTERVAL :hours HOUR),
                  renewals_count = renewals_count + 1,
-                 status = 'active',
-                 updated_at = NOW()
+                 status = 'active'
              WHERE id = :id"
         );
         $renewStmt->execute([':hours' => $renewalHours, ':id' => $loanId]);

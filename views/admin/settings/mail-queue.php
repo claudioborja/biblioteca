@@ -245,20 +245,27 @@ $attemptTone = static function (int $attempts, string $status): string {
                     <button type="button"
                             id="queue-reset-filters"
                             class="rounded-lg border border-outline-variant bg-white px-2 py-1 font-semibold text-on-surface-muted hover:bg-surface-container transition-colors">
-                        Limpiar
+                        Limpiar filtros
                     </button>
                 </div>
             </div>
 
-            <div class="mt-2 flex items-center justify-between">
+            <div class="mt-2 flex items-center justify-between gap-2">
                 <p class="text-[11px] text-on-surface-subtle">
                     Actualizado: <span id="queue-updated-at">justo ahora</span>
                 </p>
-                <button type="button" onclick="window.location.reload()"
-                        class="flex items-center gap-1.5 rounded-lg border border-outline-variant px-2.5 py-1 text-xs font-semibold text-on-surface-muted hover:bg-surface-container transition-colors">
-                    <i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>
-                    Actualizar
-                </button>
+                <div class="flex items-center gap-2">
+                    <button type="button" id="btn-clear-processed"
+                            class="flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors">
+                        <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
+                        Limpiar cola
+                    </button>
+                    <button type="button" onclick="window.location.reload()"
+                            class="flex items-center gap-1.5 rounded-lg border border-outline-variant px-2.5 py-1 text-xs font-semibold text-on-surface-muted hover:bg-surface-container transition-colors">
+                        <i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>
+                        Actualizar
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -348,16 +355,22 @@ $attemptTone = static function (int $attempts, string $status): string {
                             <?php endif; ?>
                         </td>
                         <td class="px-4 py-3">
-                            <?php if (in_array($status, ['failed', 'pending'], true)): ?>
-                            <button type="button"
-                                    class="btn-retry-one flex items-center gap-1 rounded-lg border border-outline-variant px-2 py-1 text-[11px] font-semibold text-on-surface hover:bg-surface-container transition-colors"
-                                    data-id="<?= $itemId ?>">
-                                <i data-lucide="refresh-cw" class="h-3 w-3"></i>
-                                Reintentar
-                            </button>
-                            <?php else: ?>
-                            <span class="text-[11px] text-on-surface-subtle">—</span>
-                            <?php endif; ?>
+                            <div class="flex flex-col items-start gap-1.5">
+                                <button type="button"
+                                        class="btn-preview-one flex items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100 transition-colors"
+                                        data-id="<?= $itemId ?>">
+                                    <i data-lucide="eye" class="h-3 w-3"></i>
+                                    Ver correo
+                                </button>
+                                <?php if (in_array($status, ['failed', 'pending'], true)): ?>
+                                <button type="button"
+                                        class="btn-retry-one flex items-center gap-1 rounded-lg border border-outline-variant px-2 py-1 text-[11px] font-semibold text-on-surface hover:bg-surface-container transition-colors"
+                                        data-id="<?= $itemId ?>">
+                                    <i data-lucide="refresh-cw" class="h-3 w-3"></i>
+                                    Reintentar
+                                </button>
+                                <?php endif; ?>
+                            </div>
                         </td>
                     </tr>
                     <?php endforeach; ?>
@@ -421,6 +434,28 @@ $attemptTone = static function (int $attempts, string $status): string {
 
 </section>
 
+<!-- Email preview modal -->
+<div id="mail-preview-modal" class="fixed inset-0 z-[60] hidden">
+    <div id="mail-preview-backdrop" class="absolute inset-0 bg-slate-900/55"></div>
+    <div class="relative z-[61] mx-auto mt-6 w-[96%] max-w-5xl rounded-2xl border border-outline-variant/60 bg-white shadow-ambient">
+        <div class="flex items-center justify-between border-b border-outline-variant/60 px-4 py-3">
+            <div>
+                <p class="text-xs font-semibold uppercase tracking-wide text-on-surface-subtle">Vista previa del correo</p>
+                <h3 id="mail-preview-subject" class="text-sm font-semibold text-on-surface">Asunto</h3>
+                <p id="mail-preview-meta" class="text-[11px] text-on-surface-muted"></p>
+            </div>
+            <button type="button" id="btn-close-mail-preview"
+                    class="rounded-lg border border-outline-variant px-2 py-1 text-xs font-semibold text-on-surface-muted hover:bg-surface-container transition-colors">
+                Cerrar
+            </button>
+        </div>
+        <div class="max-h-[78vh] overflow-auto p-4">
+            <iframe id="mail-preview-frame" class="hidden h-[68vh] w-full rounded-xl border border-outline-variant bg-white" sandbox=""></iframe>
+            <pre id="mail-preview-text" class="hidden whitespace-pre-wrap rounded-xl border border-outline-variant bg-surface-container-low p-3 text-xs text-on-surface"></pre>
+        </div>
+    </div>
+</div>
+
 <script>
 (function () {
     const CSRF    = <?= json_encode($csrfToken) ?>;
@@ -437,6 +472,13 @@ $attemptTone = static function (int $attempts, string $status): string {
     const resetFilters = document.getElementById('queue-reset-filters');
     const updatedAt = document.getElementById('queue-updated-at');
     const statusChips = Array.from(document.querySelectorAll('.status-chip'));
+    const previewModal = document.getElementById('mail-preview-modal');
+    const previewBackdrop = document.getElementById('mail-preview-backdrop');
+    const previewCloseBtn = document.getElementById('btn-close-mail-preview');
+    const previewSubject = document.getElementById('mail-preview-subject');
+    const previewMeta = document.getElementById('mail-preview-meta');
+    const previewFrame = document.getElementById('mail-preview-frame');
+    const previewText = document.getElementById('mail-preview-text');
 
     function showToast(msg, ok) {
         if (!toast) return;
@@ -467,6 +509,89 @@ $attemptTone = static function (int $attempts, string $status): string {
             showToast('Error de red: ' + err.message, false);
         }
     }
+
+    const closePreview = () => {
+        if (!previewModal) return;
+        previewModal.classList.add('hidden');
+        if (previewFrame) {
+            previewFrame.srcdoc = '';
+            previewFrame.classList.add('hidden');
+        }
+        if (previewText) {
+            previewText.textContent = '';
+            previewText.classList.add('hidden');
+        }
+    };
+
+    const openPreview = async (id) => {
+        try {
+            const fd = new FormData();
+            fd.append('_csrf_token', CSRF);
+            fd.append('action', 'preview_one');
+            fd.append('id', String(id));
+
+            const res = await fetch(ACTION, {
+                method: 'POST',
+                body: fd,
+                credentials: 'same-origin',
+                headers: { 'Accept': 'application/json' },
+            });
+            const data = await res.json();
+            if (!data.ok || !data.item) {
+                showToast(data.message ?? 'No se pudo cargar el correo.', false);
+                return;
+            }
+
+            const item = data.item;
+            const subject = (item.subject || '').toString();
+            const toName = (item.to_name || '').toString();
+            const toEmail = (item.to_email || '').toString();
+            const status = (item.status || '').toString();
+            const sentAt = (item.sent_at || '').toString();
+            const createdAt = (item.created_at || '').toString();
+            const bodyHtml = (item.body_html || '').toString().trim();
+            const bodyText = (item.body_text || '').toString().trim();
+
+            if (previewSubject) {
+                previewSubject.textContent = subject !== '' ? subject : '(Sin asunto)';
+            }
+            if (previewMeta) {
+                const sentLabel = sentAt !== '' ? `Enviado: ${sentAt}` : `Creado: ${createdAt}`;
+                previewMeta.textContent = `Para: ${toName} <${toEmail}> · Estado: ${status} · ${sentLabel}`;
+            }
+
+            const hasHtmlTag = /<html[\s>]/i.test(bodyHtml);
+            const htmlDoc = hasHtmlTag
+                ? bodyHtml
+                : `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="margin:0;padding:16px;background:#fff;color:#111;font-family:Arial,sans-serif;">${bodyHtml}</body></html>`;
+
+            if (bodyHtml !== '') {
+                if (previewFrame) {
+                    previewFrame.srcdoc = htmlDoc;
+                    previewFrame.classList.remove('hidden');
+                }
+                if (previewText) {
+                    previewText.classList.add('hidden');
+                    previewText.textContent = '';
+                }
+            } else {
+                if (previewFrame) {
+                    previewFrame.classList.add('hidden');
+                    previewFrame.srcdoc = '';
+                }
+                if (previewText) {
+                    previewText.textContent = bodyText !== '' ? bodyText : '(Sin contenido para mostrar)';
+                    previewText.classList.remove('hidden');
+                }
+            }
+
+            if (previewModal) {
+                previewModal.classList.remove('hidden');
+            }
+        } catch (err) {
+            showToast('Error al cargar la vista previa: ' + err.message, false);
+        }
+    };
 
     function formatUpdatedAt() {
         if (!updatedAt) return;
@@ -541,6 +666,18 @@ $attemptTone = static function (int $attempts, string $status): string {
         btnRetryAll.addEventListener('click', () => doAction({ action: 'retry_all_failed' }));
     }
 
+    // Clear processed queue entries
+    const btnClearProcessed = document.getElementById('btn-clear-processed');
+    if (btnClearProcessed) {
+        btnClearProcessed.addEventListener('click', () => {
+            const ok = window.confirm('¿Limpiar correos enviados y fallidos de la cola? Esta acción no se puede deshacer.');
+            if (!ok) {
+                return;
+            }
+            doAction({ action: 'clear_processed' });
+        });
+    }
+
     // Copy cron entry
     const btnCopy = document.getElementById('btn-copy-cron');
     if (btnCopy) {
@@ -559,6 +696,21 @@ $attemptTone = static function (int $attempts, string $status): string {
             const id = btn.dataset.id;
             doAction({ action: 'retry_one', id });
         });
+    });
+
+    // Preview email
+    document.querySelectorAll('.btn-preview-one').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const id = Number(btn.dataset.id || 0);
+            if (id > 0) {
+                openPreview(id);
+            }
+        });
+    });
+    if (previewCloseBtn) previewCloseBtn.addEventListener('click', closePreview);
+    if (previewBackdrop) previewBackdrop.addEventListener('click', closePreview);
+    document.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Escape') closePreview();
     });
 
     // Live countdown: time left until the worker cycle that can process each pending email

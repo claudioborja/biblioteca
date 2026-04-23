@@ -1231,7 +1231,12 @@ final class ResourceController extends BaseController
             'label'                   => 'Otro',
             'label_plural'            => 'Otros',
             'support_type'            => 'other',
+            'title_label'             => 'Titulo',
+            'title_placeholder'       => 'Titulo completo',
             'show_isbn'               => false,
+            'identifier_label'        => 'ISBN',
+            'identifier_placeholder'  => '978-X-XXXX-XXXX-X',
+            'identifier_prefix'       => 'ISBN:',
             'show_authors'            => true,
             'authors_label'           => 'Autor(es)',
             'authors_required'        => false,
@@ -1239,6 +1244,8 @@ final class ResourceController extends BaseController
             'publisher_label'         => 'Editorial',
             'show_edition'            => false,
             'show_digital_url'        => false,
+            'digital_url_label'       => 'URL de acceso',
+            'digital_url_placeholder' => 'https://...',
             'digital_url_required'    => false,
             'show_inventory'          => true,
             'copies_required'         => true,
@@ -1247,6 +1254,7 @@ final class ResourceController extends BaseController
             'show_cover'              => true,
             'show_location'           => true,
             'show_branch'             => true,
+            'search_placeholder'      => 'Titulo, autor, ISBN...',
         ];
 
         return match ($type) {
@@ -1282,12 +1290,23 @@ final class ResourceController extends BaseController
                 'label'                    => 'Revista',
                 'label_plural'             => 'Revistas',
                 'support_type'             => 'journal',
-                'show_authors'             => true,
-                'authors_label'            => 'Autor(es)',
+                'title_label'              => 'Nombre de la revista',
+                'title_placeholder'        => 'Nombre de la revista',
+                'show_isbn'                => true,
+                'identifier_label'         => 'ISSN',
+                'identifier_placeholder'   => '1234-567X',
+                'identifier_prefix'        => 'ISSN:',
+                'show_authors'             => false,
+                'authors_label'            => 'Editor(es)',
                 'authors_required'         => false,
-                'publisher_label'          => 'Casa publicadora / Congreso',
+                'publisher_label'          => 'Editorial / Institucion',
                 'show_digital_url'         => true,
+                'digital_url_label'        => 'Enlace',
                 'digital_url_required'     => false,
+                'show_inventory'           => false,
+                'show_location'            => false,
+                'show_branch'              => false,
+                'search_placeholder'       => 'Nombre, ISSN, editorial...',
                 'replacement_cost_required'=> false,
             ]),
             'thesis' => array_merge($base, [
@@ -2139,21 +2158,26 @@ final class ResourceController extends BaseController
             $errors[] = 'La fecha de adquisición no es válida.';
         }
 
-        // ISBN validation & duplicate check
+        // Identifier validation (ISBN for books, ISSN for journals) & duplicate check
         if ($d['isbn'] !== '') {
-            $isbn13 = Isbn::normalize($d['isbn']);
-            if ($isbn13 === null) {
-                $errors[] = 'El ISBN ingresado no es válido.';
+            $isJournal = (string) ($d['resource_type'] ?? '') === 'journal';
+            $identifier = $this->normalizeIdentifierForType($d['isbn'], (string) ($d['resource_type'] ?? ''));
+            if ($identifier === null) {
+                $errors[] = $isJournal
+                    ? 'El ISSN ingresado no es valido.'
+                    : 'El ISBN ingresado no es valido.';
             } else {
                 if ($excludeId !== null) {
                     $chk = $this->db->prepare('SELECT id FROM resources WHERE isbn_13 = ? AND id <> ? LIMIT 1');
-                    $chk->execute([$isbn13, $excludeId]);
+                    $chk->execute([$identifier, $excludeId]);
                 } else {
                     $chk = $this->db->prepare('SELECT id FROM resources WHERE isbn_13 = ? LIMIT 1');
-                    $chk->execute([$isbn13]);
+                    $chk->execute([$identifier]);
                 }
                 if ($chk->fetch()) {
-                    $errors[] = 'Ya existe un recurso con ese ISBN.';
+                    $errors[] = $isJournal
+                        ? 'Ya existe un recurso con ese ISSN.'
+                        : 'Ya existe un recurso con ese ISBN.';
                 }
             }
         }
@@ -2163,7 +2187,7 @@ final class ResourceController extends BaseController
 
     private function doInsertResource(array $d): int
     {
-        $isbn13  = $d['isbn'] !== '' ? Isbn::normalize($d['isbn']) : null;
+        $isbn13  = $d['isbn'] !== '' ? $this->normalizeIdentifierForType($d['isbn'], (string) ($d['resource_type'] ?? '')) : null;
         $authors = array_values(array_filter(array_map(
             static fn(string $a): string => trim($a),
             preg_split('/[,;\n]+/', $d['authors']) ?: []
@@ -2235,7 +2259,7 @@ final class ResourceController extends BaseController
 
     private function doUpdateResource(int $id, array $d): void
     {
-        $isbn13  = $d['isbn'] !== '' ? Isbn::normalize($d['isbn']) : null;
+        $isbn13  = $d['isbn'] !== '' ? $this->normalizeIdentifierForType($d['isbn'], (string) ($d['resource_type'] ?? '')) : null;
         $authors = array_values(array_filter(array_map(
             static fn(string $a): string => trim($a),
             preg_split('/[,;\n]+/', $d['authors']) ?: []
@@ -2315,6 +2339,50 @@ final class ResourceController extends BaseController
             'is_active'         => (int) $d['is_active'],
             'id'                => $id,
         ]);
+    }
+
+    private function normalizeIdentifierForType(string $value, string $type): ?string
+    {
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        if ($type === 'journal') {
+            return $this->normalizeIssn($trimmed);
+        }
+
+        return Isbn::normalize($trimmed);
+    }
+
+    private function normalizeIssn(string $value): ?string
+    {
+        $clean = strtoupper((string) (preg_replace('/[^0-9X]/i', '', $value) ?? ''));
+        if (strlen($clean) !== 8) {
+            return null;
+        }
+
+        $sum = 0;
+        for ($i = 0; $i < 7; $i++) {
+            $ch = $clean[$i];
+            if (!ctype_digit($ch)) {
+                return null;
+            }
+            $sum += ((int) $ch) * (8 - $i);
+        }
+
+        $last = $clean[7];
+        if (!ctype_digit($last) && $last !== 'X') {
+            return null;
+        }
+
+        $check = (11 - ($sum % 11)) % 11;
+        $expected = $check === 10 ? 'X' : (string) $check;
+        if ($last !== $expected) {
+            return null;
+        }
+
+        return substr($clean, 0, 4) . '-' . substr($clean, 4, 4);
     }
 
     private function validateCoverImageFile(array $file): ?string
